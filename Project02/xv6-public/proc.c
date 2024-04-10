@@ -336,7 +336,7 @@ wait(void)
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
 void
-scheduler_(void)
+scheduler_deprecated(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
@@ -391,6 +391,20 @@ scheduler(void)
     sti();
     acquire(&ptable.lock);
 
+    // find not pushed processes
+    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    {
+      if (p->pid != 0 && p->state == RUNNABLE)
+      {
+        if (q_exist(&L0, p)) continue;
+        if (q_exist(&L1, p)) continue;
+        if (q_exist(&L2, p)) continue;
+        if (q_exist(&L3, p)) continue;
+        if (q_exist(&MQ, p)) continue;
+        q_push(&L0, p);
+      }
+    }
+
     // MoQ
     if (monopolized)
     {
@@ -430,10 +444,10 @@ scheduler(void)
     }
 
     // Priority Boosting
-    // clear all queue except MoQ.
     if (ticks == 99)
     {
       ticks++;  // for run only once. ticks = 98 -> (99) -> 100 -> 0. so priority boosting happens every 100 ticks (same)
+      // clear all queue except MoQ.
       q_clear(&L0);
       q_clear(&L1);
       q_clear(&L2);
@@ -603,20 +617,6 @@ scheduler(void)
       }
       release(&ptable.lock);
       continue;
-    }
-
-    // find not pushed processes
-    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    {
-      if (p->pid != 0 && p->state == RUNNABLE)
-      {
-        if (q_exist(&L0, p)) continue;
-        if (q_exist(&L1, p)) continue;
-        if (q_exist(&L2, p)) continue;
-        if (q_exist(&L3, p)) continue;
-        if (q_exist(&MQ, p)) continue;
-        q_push(&L0, p);
-      }
     }
 
     release(&ptable.lock);

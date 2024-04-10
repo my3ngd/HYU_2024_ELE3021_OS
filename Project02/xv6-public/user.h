@@ -24,6 +24,13 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 
+int yield(void);
+int getlev(void);
+int setpriority(int, int);
+int setmonopoly(int, int);
+int monopolize(void);
+int unmonopolize(void);
+
 // ulib.c
 int stat(const char*, struct stat*);
 char* strcpy(char*, const char*);
