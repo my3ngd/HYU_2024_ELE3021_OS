@@ -49,6 +49,12 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  // for process queue
+  int priority;                // priority of this proc (in L3 queue)
+  int queue_level;             // queue level of this proc (0 ~ 3)
+  struct proc* next;           // next process in queue
+  int ticks;                   // used ticks
 };
 
 // Process memory is laid out contiguously, low addresses first:
@@ -56,3 +62,14 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+
+// process queue
+// L_i queue => time quantum = 2i + 2
+struct proc_queue {
+  struct proc* front;
+  struct proc* back;
+  int queue_level;
+  int time_quantum;
+  int size;  // queue size
+};
+

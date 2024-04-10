@@ -12,9 +12,18 @@ struct {
   struct proc proc[NPROC];
 } ptable;
 
+// queue
+struct proc_queue L0;  // Round-Robin
+struct proc_queue L1;  // Round-Robin
+struct proc_queue L2;  // Round-Robin
+struct proc_queue L3;  // priority queue
+struct proc_queue MQ;  // FCFS (MoQ)
+
 static struct proc *initproc;
 
+int monopolized = 0;   // MoQ activated state
 int nextpid = 1;
+extern uint ticks;     // from clock
 extern void forkret(void);
 extern void trapret(void);
 
@@ -24,6 +33,13 @@ void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
+  acquire(&ptable.lock);
+  init_queue(&L0,  0);
+  init_queue(&L1,  1);
+  init_queue(&L2,  2);
+  init_queue(&L3,  3);
+  init_queue(&MQ, 99);  // MoQ is FCFS queue, so don't have time quantum
+  release(&ptable.lock);
 }
 
 // Must be called with interrupts disabled
