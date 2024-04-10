@@ -65,6 +65,7 @@ q_push(struct proc_queue* q, struct proc* p)
     q->front = p;
     q->back = p;
     p->next = p;
+    q->size++;
     return ;
   }
   q->size++;
@@ -169,7 +170,7 @@ print_queue(struct proc_queue *q)
 {
   cprintf("===========================================\n");
   cprintf("  size = %d\n", q->size);
-  struct proc *p = nullptr;
+  struct proc *p = q->front;
   do
   {
     cprintf("> pid = %d\n", p->pid);

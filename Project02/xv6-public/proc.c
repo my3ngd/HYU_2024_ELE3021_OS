@@ -433,15 +433,15 @@ scheduler(void)
 
     // Priority Boosting
     // clear all queue except MoQ.
-    if (ticks == 0)
+    if (ticks == 1)
     {
-      cprintf("======================= tick = %d, size: [%d %d %d %d %d] =======================\n", ticks++, L0.size, L1.size, L2.size, L3.size, MQ.size);
+      // cprintf("======================= tick = %d, size: [%d %d %d %d %d] =======================\n", ticks, L0.size, L1.size, L2.size, L3.size, MQ.size);
       int i;
       for (i = 0; i < NPROC; i++)
       {
         if (ptable.proc[i].pid == 1)
-        cprintf("> pid 1 state: %d\n", ptable.proc[i].state);
-        cprintf("%d, %d, %d, %d, %d, %d\n", UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE);
+        // cprintf("> pid 1 state: %d\n", ptable.proc[i].state);
+        // cprintf("%d, %d, %d, %d, %d, %d\n", UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE);
         break;
       }
     }
@@ -511,7 +511,7 @@ scheduler(void)
     // L1
     if (!q_empty(&L1))
     {
-      print_queue(&L1);
+      // print_queue(&L1);
       p = q_front(&L1);
       // not runnable -> ignore
       if (p->state != RUNNABLE)
