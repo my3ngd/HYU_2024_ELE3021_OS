@@ -9,6 +9,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct proc_queue;
 
 // bio.c
 void            binit(void);
@@ -187,6 +188,24 @@ int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
 
 // project02
+// queue.c
+void            init_queue(struct proc_queue* q, int queue_level);
+int             q_empty(struct proc_queue* q);
+struct proc*    q_front(struct proc_queue* q);
+int             q_exist(struct proc_queue* q, struct proc* p);
+void            q_clear(struct proc_queue* q);
+void            q_push(struct proc_queue* q, struct proc* p);
+void            q_pop(struct proc_queue* q);
+void            q_setfront(struct proc_queue* q, struct proc* p);
+void            q_remove(struct proc_queue* q, struct proc* p);
+struct proc*    q_top(struct proc_queue* pq);
+void            print_queue(struct proc_queue* q);
+
+// monopoly.c
+int             setmonopoly(int pid, int password);
+void            monopolize(void);
+void            unmonopolize(void);
+
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
