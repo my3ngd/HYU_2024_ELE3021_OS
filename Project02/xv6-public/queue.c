@@ -26,7 +26,7 @@ init_queue(struct proc_queue* q, int queue_level)
 int
 q_empty(struct proc_queue* q)
 {
-  return !q->size;
+  return q->size == 0;
 }
 
 struct proc*
@@ -60,13 +60,14 @@ q_push(struct proc_queue* q, struct proc* p)
 {
   p->queue_level = q->queue_level;
   p->ticks = 0;
-  q->size++;
   if (q_empty(q))
   {
-    q->front = q->back = p;
+    q->front = p;
+    q->back = p;
     p->next = p;
     return ;
   }
+  q->size++;
   q->back->next = p;
   q->back = p;
   p->next = q->front;
