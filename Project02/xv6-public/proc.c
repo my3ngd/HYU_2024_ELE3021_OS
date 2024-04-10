@@ -336,7 +336,7 @@ wait(void)
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
 void
-scheduler0(void)
+scheduler_(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
@@ -367,7 +367,6 @@ scheduler0(void)
       c->proc = 0;
     }
     release(&ptable.lock);
-
   }
 }
 
@@ -379,7 +378,6 @@ scheduler0(void)
  * 그 다음 Priority Boosting 처리
  * 그 다음 L0 ~ L3에서 찾아서 처리
 */
-
 void
 scheduler(void)
 {
@@ -433,21 +431,9 @@ scheduler(void)
 
     // Priority Boosting
     // clear all queue except MoQ.
-    if (ticks == 1)
+    if (ticks == 99)
     {
-      // cprintf("======================= tick = %d, size: [%d %d %d %d %d] =======================\n", ticks, L0.size, L1.size, L2.size, L3.size, MQ.size);
-      int i;
-      for (i = 0; i < NPROC; i++)
-      {
-        if (ptable.proc[i].pid == 1)
-        // cprintf("> pid 1 state: %d\n", ptable.proc[i].state);
-        // cprintf("%d, %d, %d, %d, %d, %d\n", UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE);
-        break;
-      }
-    }
-
-    if (ticks == 0)
-    {
+      ticks++;  // for run only once. ticks = 98 -> (99) -> 100 -> 0. so priority boosting happens every 100 ticks (same)
       q_clear(&L0);
       q_clear(&L1);
       q_clear(&L2);
@@ -470,7 +456,6 @@ scheduler(void)
     // L0
     if (!q_empty(&L0))
     {
-      // cprintf(">>>\n");
       p = q_front(&L0);
       // not runnable -> ignore
       if (p->state != RUNNABLE)
@@ -618,6 +603,20 @@ scheduler(void)
       }
       release(&ptable.lock);
       continue;
+    }
+
+    // find not pushed processes
+    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    {
+      if (p->pid != 0 && p->state == RUNNABLE)
+      {
+        if (q_exist(&L0, p)) continue;
+        if (q_exist(&L1, p)) continue;
+        if (q_exist(&L2, p)) continue;
+        if (q_exist(&L3, p)) continue;
+        if (q_exist(&MQ, p)) continue;
+        q_push(&L0, p);
+      }
     }
 
     release(&ptable.lock);
