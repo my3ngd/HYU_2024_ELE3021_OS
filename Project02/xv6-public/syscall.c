@@ -107,8 +107,8 @@ extern int sys_getgpid(void);
 
 extern int sys_yield(void);
 extern int sys_getlev(void);
-extern int sys_setpriority(int, int);
-extern int sys_setmonopoly(int, int);
+extern int sys_setpriority(void);
+extern int sys_setmonopoly(void);
 extern int sys_monopolize(void);
 extern int sys_unmonopolize(void);
 

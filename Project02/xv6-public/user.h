@@ -24,12 +24,12 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 
-int yield(void);
+void yield(void);
 int getlev(void);
 int setpriority(int, int);
 int setmonopoly(int, int);
-int monopolize(void);
-int unmonopolize(void);
+void monopolize(void);
+void unmonopolize(void);
 
 // ulib.c
 int stat(const char*, struct stat*);

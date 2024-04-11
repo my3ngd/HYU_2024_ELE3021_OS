@@ -391,6 +391,9 @@ scheduler(void)
     sti();
     acquire(&ptable.lock);
 
+    // cprintf("-- %d\n", ticks);
+    // cprintf("[%d | %d %d %d %d]\n", MQ.size, L0.size, L1.size, L2.size, L3.size);
+
     // find not pushed processes
     for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     {
@@ -799,4 +802,14 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+
+// wrapper function
+
+int
+sys_yield(void)
+{
+  yield();
+  return 0;
 }

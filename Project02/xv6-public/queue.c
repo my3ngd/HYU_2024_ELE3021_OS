@@ -219,7 +219,9 @@ sys_getlev(void)
 }
 
 int
-sys_setpriority(int pid, int priority)
+sys_setpriority(void)
 {
-  return setpriority(pid, priority);
+  int arg_pid, arg_priority;
+  if (argint(0, &arg_pid) < 0 || argint(1, &arg_priority) < 0) return 1;  // argint fails (1)
+  return setpriority(arg_pid, arg_priority);  // return wrapped function's return value (0 ~ -2)
 }

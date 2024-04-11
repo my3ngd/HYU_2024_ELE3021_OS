@@ -91,20 +91,24 @@ unmonopolize(void)
 // wrapper functions
 
 int
-sys_setmonopoly(int pid, int password)
+sys_setmonopoly(void)
 {
-  return setmonopoly(pid, password);
+  int pid, password;
+  if (argint(0, &pid) < 0 || argint(1, &password) < 0) return -5;  // argint fails (-5)
+  return setmonopoly(pid, password);  // return wrapped function's return value ({size of MoQ} ~ -4)
 }
 
-void
+int
 sys_monopolize(void)
 {
-  return monopolize();
+  monopolize();
+  return 0;
 }
 
-void
+int
 sys_unmonopolize(void)
 {
-  return unmonopolize();
+  unmonopolize();
+  return 0;
 }
 
