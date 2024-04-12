@@ -59,7 +59,6 @@ void
 q_push(struct proc_queue* q, struct proc* p)
 {
   p->queue_level = q->queue_level;
-  p->ticks = 0;
   if (q_empty(q))
   {
     q->front = p;
@@ -222,6 +221,7 @@ int
 sys_setpriority(void)
 {
   int arg_pid, arg_priority;
-  if (argint(0, &arg_pid) < 0 || argint(1, &arg_priority) < 0) return 1;  // argint fails (1)
-  return setpriority(arg_pid, arg_priority);  // return wrapped function's return value (0 ~ -2)
+  argint(0, &arg_pid);
+  argint(1, &arg_priority);
+  return setpriority(arg_pid, arg_priority);
 }

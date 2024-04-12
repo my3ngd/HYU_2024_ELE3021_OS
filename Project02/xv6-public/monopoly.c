@@ -8,7 +8,7 @@
 #include "spinlock.h"
 
 
-extern int monopolized;
+extern int is_monopolized;
 extern uint ticks;
 extern struct proc_queue L0;
 extern struct proc_queue L1;
@@ -61,7 +61,7 @@ setmonopoly(int pid, int password)
       q_push(&MQ, p);  // new queue_level(99) also determined
 
       release(&ptable.lock);
-      return 0;
+      return MQ.size;
     }
   }
   // -1: pid not exist
@@ -73,7 +73,8 @@ setmonopoly(int pid, int password)
 void
 monopolize(void)
 {
-  monopolized = 1;
+  cprintf("[SYS] moq activated!\n");
+  is_monopolized = 1;
   return ;
 }
 
@@ -81,7 +82,8 @@ monopolize(void)
 void
 unmonopolize(void)
 {
-  monopolized = 0;
+  cprintf("[SYS] moq deactivated!\n");
+  is_monopolized = 0;
   acquire(&tickslock);
   ticks = 0;
   release(&tickslock);
@@ -93,6 +95,7 @@ unmonopolize(void)
 int
 sys_setmonopoly(void)
 {
+  cprintf("[SYS] setmonopoly\n");
   int pid, password;
   if (argint(0, &pid) < 0 || argint(1, &password) < 0) return -5;  // argint fails (-5)
   return setmonopoly(pid, password);  // return wrapped function's return value ({size of MoQ} ~ -4)
