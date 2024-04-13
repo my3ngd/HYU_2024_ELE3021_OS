@@ -2,7 +2,7 @@
 #include "stat.h"
 #include "user.h"
 
-#define NUM_LOOP 10000
+#define NUM_LOOP 100000
 #define NUM_SLEEP 50
 
 #define NUM_THREAD 8
@@ -53,15 +53,19 @@ int fork_children3()
     if((p = fork()) == 0)
     {
       sleep(10);
+      printf(1, "pid %d sleep end\n", getpid());
       return getpid();
     }
     else
     {
       int r = 0;
+      printf(1, "parent process id: %d\n", getpid());
       if(p % 2 == 1)
       {
         r = setmonopoly(p, 2020098240); // input your student number
         printf(1, "Number of processes in MoQ: %d\n",r);
+        // if (r >= NUM_THREAD / 2)
+        //   monopolize();
       }
       if(r < 0)
       {

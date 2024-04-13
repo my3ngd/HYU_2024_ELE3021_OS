@@ -61,7 +61,7 @@ setmonopoly(int pid, int password)
       q_push(&MQ, p);  // new queue_level(99) also determined
 
       release(&ptable.lock);
-      return MQ.size;
+      return q_size(&MQ);
     }
   }
   // -1: pid not exist

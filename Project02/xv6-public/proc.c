@@ -338,7 +338,7 @@ wait(void)
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
 void
-scheduler_(void)
+scheduler__(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
@@ -372,35 +372,6 @@ scheduler_(void)
   }
 }
 
-
-void
-func(int line)
-{
-  return;
-  acquire(&tickslock);
-  if (ticks == 99)
-  {
-    cprintf("> %d\n", line);
-    ticks++;
-  }
-  release(&tickslock);
-  return ;
-}
-
-void
-gunc(void)
-{
-  return;
-  acquire(&tickslock);
-  if (ticks == 50)
-  {
-    ticks++;
-    cprintf(" [%d]\n", L0.size);
-  }
-  release(&tickslock);
-}
-
-
 void
 scheduler(void)
 {
@@ -412,8 +383,89 @@ scheduler(void)
   {
     sti();
     acquire(&ptable.lock);
+
+    // assertion
+    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    {
+      if (p != nullptr && p->state == RUNNABLE)
+      {
+        if (!q_exist(&L0, p) && !q_exist(&L1, p) && !q_exist(&L2, p) && !q_exist(&L3, p) && !q_exist(&MQ, p))
+        {
+          cprintf("???\n");
+          q_push(&L0, p);
+          panic("force update\n");
+        }
+      }
+    }
+
     // Monopoly Queue
+    if (is_monopolized)
+    {
+      if (q_empty(&MQ))
+      {
+        unmonopolize();
+        release(&ptable.lock);
+        continue;
+      }
+      p = q_front(&MQ);
+      if (p == nullptr || p->state != RUNNABLE)
+      {
+        cprintf("  MOQ process pid = %d end. current size = %d\n", p->pid, q_size(&MQ));
+        q_pop(&MQ);
+        release(&ptable.lock);
+        continue;
+      }
+      // run
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+      c->proc = 0;
+
+      release(&ptable.lock);
+      continue;
+    }
+
+    // acquire(&tickslock);
+    // if (ticks % 100 == 99)
+    // {
+    //   cprintf("q sizes: %d, %d | monopolized: %d\n", q_size(&L0), q_size(&MQ), is_monopolized);
+    // }
+    // release(&tickslock);
+    
     // Priority Boosting
+    acquire(&tickslock);
+    if (ticks % 100 == 99)
+    {
+      ticks = 0;
+      release(&tickslock);
+      while (q_size(&L1))
+      {
+        p = q_front(&L1);
+        p->ticks = 0;
+        q_push(&L0, p);
+        q_pop(&L1);
+      }
+      while (q_size(&L2))
+      {
+        p = q_front(&L2);
+        p->ticks = 0;
+        q_push(&L0, p);
+        q_pop(&L2);
+      }
+      while (q_size(&L3))
+      {
+        p = q_front(&L3);
+        p->ticks = 0;
+        q_push(&L0, p);
+        q_pop(&L3);
+      }
+      release(&ptable.lock);
+      continue;
+    }
+    release(&tickslock);
+
     // L0
     if (!q_empty(&L0))
     {
@@ -429,7 +481,14 @@ scheduler(void)
       {
         p->ticks = 0;
         q_pop(&L0);
-        q_push(&L0, p);
+        if (p->pid % 2 == 1)
+        {
+          q_push(&L1, p);
+        }
+        else
+        {
+          q_push(&L2, p);
+        }
         release(&ptable.lock);
         continue;
       }
@@ -445,9 +504,102 @@ scheduler(void)
       release(&ptable.lock);
       continue;
     }
+
     // L1
+    if (!q_empty(&L1))
+    {
+      p = q_front(&L1);
+      if (p->state != RUNNABLE)
+      {
+        q_pop(&L1);
+        release(&ptable.lock);
+        continue;
+      }
+
+      if (L1.time_quantum <= ++(p->ticks))
+      {
+        p->ticks = 0;
+        q_pop(&L1);
+        q_push(&L3, p);
+        release(&ptable.lock);
+        continue;
+      }
+
+      // run
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+      c->proc = 0;
+
+      release(&ptable.lock);
+      continue;
+    }
+
     // L2
+    if (!q_empty(&L2))
+    {
+      p = q_front(&L2);
+      if (p->state != RUNNABLE)
+      {
+        q_pop(&L2);
+        release(&ptable.lock);
+        continue;
+      }
+
+      if (L2.time_quantum <= ++(p->ticks))
+      {
+        p->ticks = 0;
+        q_pop(&L2);
+        q_push(&L3, p);
+        release(&ptable.lock);
+        continue;
+      }
+
+      // run
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+      c->proc = 0;
+
+      release(&ptable.lock);
+      continue;
+    }
+
     // L3
+    if (!q_empty(&L3))
+    {
+      p = q_top(&L3);
+      if (p->state != RUNNABLE)
+      {
+        q_remove(&L3, p);
+        release(&ptable.lock);
+        continue;
+      }
+
+      if (L3.time_quantum <= ++(p->ticks))
+      {
+        p->ticks = 0;
+        if (0 < p->priority)
+          p->priority--;
+        release(&ptable.lock);
+        continue;
+      }
+
+      // run
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+      c->proc = 0;
+
+      release(&ptable.lock);
+      continue;
+    }
     release(&ptable.lock);
   }
 }
@@ -563,11 +715,11 @@ wakeup1(void *chan)
     if(p->state == SLEEPING && p->chan == chan)
     {
       p->state = RUNNABLE;
-      if (q_exist(&L0, p)) q_remove(&L0, p);
+      // if (q_exist(&L0, p)) q_remove(&L0, p);
       if (q_exist(&L1, p)) q_remove(&L1, p);
       if (q_exist(&L2, p)) q_remove(&L2, p);
       if (q_exist(&L3, p)) q_remove(&L3, p);
-      if (q_exist(&MQ, p)) q_remove(&MQ, p);
+      // if (q_exist(&MQ, p)) q_remove(&MQ, p);
       q_push(&L0, p);
     }
   }
@@ -598,11 +750,11 @@ kill(int pid)
       if(p->state == SLEEPING)
       {
         p->state = RUNNABLE;
-        if (q_exist(&L0, p)) q_remove(&L0, p);
+        // if (q_exist(&L0, p)) q_remove(&L0, p);
         if (q_exist(&L1, p)) q_remove(&L1, p);
         if (q_exist(&L2, p)) q_remove(&L2, p);
         if (q_exist(&L3, p)) q_remove(&L3, p);
-        if (q_exist(&MQ, p)) q_remove(&MQ, p);
+        // if (q_exist(&MQ, p)) q_remove(&MQ, p);
         q_push(&L0, p);
       }
       release(&ptable.lock);
