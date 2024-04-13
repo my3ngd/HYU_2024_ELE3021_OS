@@ -122,8 +122,7 @@ q_top(struct proc_queue *q)
 int
 getlev(void)
 {
-  struct proc* curr_proc = myproc();
-  return curr_proc->queue_level;
+  return myproc()->queue_level;
 }
 
 int

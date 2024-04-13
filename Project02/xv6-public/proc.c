@@ -38,7 +38,7 @@ pinit(void)
   init_queue(&L1,  1);
   init_queue(&L2,  2);
   init_queue(&L3,  3);
-  init_queue(&MQ, 99);  // MoQ is FCFS queue, so don't have time quantum
+  init_queue(&MQ,  7);  // MoQ is FCFS queue, so don't have time quantum
   release(&ptable.lock);
 }
 
@@ -408,9 +408,11 @@ scheduler(void)
         continue;
       }
       p = q_front(&MQ);
-      if (p == nullptr || p->state != RUNNABLE)
+      p->queue_level = 99;
+
+      if (p == nullptr || p->state == ZOMBIE)  // (p->state != RUNNABLE && p->state != SLEEPING)
       {
-        cprintf("  MOQ process pid = %d end. current size = %d\n", p->pid, q_size(&MQ));
+        cprintf("  MOQ process pid = %d end. current size = %d | lev = %d | state = %d\n", p->pid, q_size(&MQ), p->queue_level, p->state);
         q_pop(&MQ);
         release(&ptable.lock);
         continue;
@@ -439,6 +441,7 @@ scheduler(void)
     if (ticks % 100 == 99)
     {
       ticks = 0;
+      cprintf("\t\tBOOST\n");
       release(&tickslock);
       while (q_size(&L1))
       {
@@ -470,7 +473,7 @@ scheduler(void)
     if (!q_empty(&L0))
     {
       p = q_front(&L0);
-      if (p->state != RUNNABLE)
+      if (p->state != RUNNABLE && p->state != SLEEPING)
       {
         q_pop(&L0);
         release(&ptable.lock);
@@ -509,7 +512,7 @@ scheduler(void)
     if (!q_empty(&L1))
     {
       p = q_front(&L1);
-      if (p->state != RUNNABLE)
+      if (p->state != RUNNABLE && p->state != SLEEPING)
       {
         q_pop(&L1);
         release(&ptable.lock);
@@ -541,7 +544,7 @@ scheduler(void)
     if (!q_empty(&L2))
     {
       p = q_front(&L2);
-      if (p->state != RUNNABLE)
+      if (p->state != RUNNABLE && p->state != SLEEPING)
       {
         q_pop(&L2);
         release(&ptable.lock);
@@ -573,7 +576,7 @@ scheduler(void)
     if (!q_empty(&L3))
     {
       p = q_top(&L3);
-      if (p->state != RUNNABLE)
+      if (p->state != RUNNABLE && p->state != SLEEPING)
       {
         q_remove(&L3, p);
         release(&ptable.lock);
@@ -715,11 +718,9 @@ wakeup1(void *chan)
     if(p->state == SLEEPING && p->chan == chan)
     {
       p->state = RUNNABLE;
-      // if (q_exist(&L0, p)) q_remove(&L0, p);
-      if (q_exist(&L1, p)) q_remove(&L1, p);
-      if (q_exist(&L2, p)) q_remove(&L2, p);
-      if (q_exist(&L3, p)) q_remove(&L3, p);
-      // if (q_exist(&MQ, p)) q_remove(&MQ, p);
+      q_remove(&L1, p);
+      q_remove(&L2, p);
+      q_remove(&L3, p);
       q_push(&L0, p);
     }
   }
@@ -750,11 +751,9 @@ kill(int pid)
       if(p->state == SLEEPING)
       {
         p->state = RUNNABLE;
-        // if (q_exist(&L0, p)) q_remove(&L0, p);
-        if (q_exist(&L1, p)) q_remove(&L1, p);
-        if (q_exist(&L2, p)) q_remove(&L2, p);
-        if (q_exist(&L3, p)) q_remove(&L3, p);
-        // if (q_exist(&MQ, p)) q_remove(&MQ, p);
+        q_remove(&L1, p);
+        q_remove(&L2, p);
+        q_remove(&L3, p);
         q_push(&L0, p);
       }
       release(&ptable.lock);
