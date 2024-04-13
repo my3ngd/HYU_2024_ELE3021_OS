@@ -372,12 +372,27 @@ scheduler__(void)
   }
 }
 
+int prev_ticks;
+void update_tick(struct proc* p)
+{
+  acquire(&tickslock);
+  if (prev_ticks != ticks)
+  {
+    // cprintf("\t%d %d\n", prev_ticks, ticks);
+    prev_ticks = ticks;
+    p->ticks++;
+  }
+  release(&tickslock);
+  return ;
+}
+
 void
 scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = nullptr;
+  int flag = 1;
   
   for(;;)
   {
@@ -438,32 +453,41 @@ scheduler(void)
     
     // Priority Boosting
     acquire(&tickslock);
-    if (ticks % 100 == 99)
+    if (ticks % 100 == 0) flag = 1;
+    if (ticks % 100 == 99 && flag == 1)
     {
-      ticks = 0;
-      cprintf("\t\tBOOST\n");
+      flag = 0;
+      cprintf("\t\tBOOST: [%d | %d %d %d %d] ", q_size(&MQ), q_size(&L0), q_size(&L1), q_size(&L2), q_size(&L3));
       release(&tickslock);
+      for (int i = 0; i < q_size(&L0); i++)  // iteration for L0 size (not while statement!)
+      {
+        p = q_front(&L0);
+        p->ticks = 0;  // this loop is for here
+        q_pop(&L0);
+        q_push(&L0, p);
+      }
       while (q_size(&L1))
       {
         p = q_front(&L1);
         p->ticks = 0;
-        q_push(&L0, p);
         q_pop(&L1);
+        q_push(&L0, p);
       }
       while (q_size(&L2))
       {
         p = q_front(&L2);
         p->ticks = 0;
-        q_push(&L0, p);
         q_pop(&L2);
+        q_push(&L0, p);
       }
       while (q_size(&L3))
       {
         p = q_front(&L3);
         p->ticks = 0;
-        q_push(&L0, p);
         q_pop(&L3);
+        q_push(&L0, p);
       }
+      cprintf(" -> [%d | %d %d %d %d]\n", q_size(&MQ), q_size(&L0), q_size(&L1), q_size(&L2), q_size(&L3));
       release(&ptable.lock);
       continue;
     }
@@ -480,7 +504,7 @@ scheduler(void)
         continue;
       }
 
-      if (L0.time_quantum <= ++(p->ticks))
+      if (L0.time_quantum <= (p->ticks))
       {
         p->ticks = 0;
         q_pop(&L0);
@@ -503,6 +527,10 @@ scheduler(void)
       swtch(&(c->scheduler), p->context);
       switchkvm();
       c->proc = 0;
+      update_tick(p);
+
+      q_pop(&L0);
+      q_push(&L0, p);
 
       release(&ptable.lock);
       continue;
@@ -519,7 +547,7 @@ scheduler(void)
         continue;
       }
 
-      if (L1.time_quantum <= ++(p->ticks))
+      if (L1.time_quantum <= (p->ticks))
       {
         p->ticks = 0;
         q_pop(&L1);
@@ -535,6 +563,10 @@ scheduler(void)
       swtch(&(c->scheduler), p->context);
       switchkvm();
       c->proc = 0;
+      update_tick(p);
+
+      q_pop(&L1);
+      q_push(&L1, p);
 
       release(&ptable.lock);
       continue;
@@ -551,7 +583,7 @@ scheduler(void)
         continue;
       }
 
-      if (L2.time_quantum <= ++(p->ticks))
+      if (L2.time_quantum <= (p->ticks))
       {
         p->ticks = 0;
         q_pop(&L2);
@@ -567,6 +599,10 @@ scheduler(void)
       swtch(&(c->scheduler), p->context);
       switchkvm();
       c->proc = 0;
+      update_tick(p);
+
+      q_pop(&L2);
+      q_push(&L2, p);
 
       release(&ptable.lock);
       continue;
@@ -583,7 +619,7 @@ scheduler(void)
         continue;
       }
 
-      if (L3.time_quantum <= ++(p->ticks))
+      if (L3.time_quantum <= (p->ticks))
       {
         p->ticks = 0;
         if (0 < p->priority)
@@ -599,11 +635,13 @@ scheduler(void)
       swtch(&(c->scheduler), p->context);
       switchkvm();
       c->proc = 0;
+      update_tick(p);
 
       release(&ptable.lock);
       continue;
     }
     release(&ptable.lock);
+    cprintf("reached end\n");
   }
 }
 
@@ -808,5 +846,31 @@ int
 sys_yield(void)
 {
   yield();
+  return 0;
+}
+
+void rn_sleep(int ms) {
+  int prev, cur, ms_tick;
+
+  prev = lapic[0x0390 / 4];
+  ms_tick = 0;
+  for (; ;) {
+    cur = lapic[0x0390 / 4];
+
+    if (cur + 1000000 <= prev) {
+      if (++ms_tick == ms) break;
+      prev -= 1000000;
+    } else if (cur >= prev) {
+      prev += 10000000;
+    }
+  }
+  return ;
+}
+
+int sys_rn_sleep(void)
+{
+  int ms;
+  if (argint(1, &ms) < 0)
+    return -1;
   return 0;
 }

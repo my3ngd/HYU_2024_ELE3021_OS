@@ -3,7 +3,7 @@
 #include "user.h"
 
 #define NUM_LOOP 100000
-#define NUM_SLEEP 50
+#define NUM_SLEEP 500
 
 #define NUM_THREAD 8
 #define MAX_LEVEL 5
@@ -62,6 +62,8 @@ int fork_children3()
       {
         r = setmonopoly(p, 2020098240); // input your student number
         printf(1, "Number of processes in MoQ: %d\n",r);
+        // if (r >= NUM_THREAD / 2)
+        //   monopolize();
       }
       if(r < 0)
       {
