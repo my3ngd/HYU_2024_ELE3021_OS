@@ -12,6 +12,12 @@ extern struct {
   struct proc proc[NPROC];
 } ptable;
 
+extern struct proc_queue MQ;
+extern struct proc_queue L0;
+extern struct proc_queue L1;
+extern struct proc_queue L2;
+extern struct proc_queue L3;
+
 const int SZ = NPROC+1;
 
 int
@@ -106,6 +112,16 @@ q_remove(struct proc_queue *q, struct proc *p)
   }
   q->back = (q->back+SZ-1)%SZ;
   return ;
+}
+
+void
+q_removeall(struct proc *p)
+{
+  q_remove(&MQ, p);
+  q_remove(&L0, p);
+  q_remove(&L1, p);
+  q_remove(&L2, p);
+  q_remove(&L3, p);
 }
 
 struct proc*

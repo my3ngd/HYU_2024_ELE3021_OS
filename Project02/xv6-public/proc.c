@@ -338,28 +338,28 @@ priority_boosting(void)
   {
     p = q_front(&L0);
     p->ticks = 0;  // this loop is for here
-    q_pop(&L0);
+    q_removeall(p);
     q_push(&L0, p);
   }
   while (q_size(&L1))
   {
     p = q_front(&L1);
     p->ticks = 0;
-    q_pop(&L1);
+    q_removeall(p);
     q_push(&L0, p);
   }
   while (q_size(&L2))
   {
     p = q_front(&L2);
     p->ticks = 0;
-    q_pop(&L2);
+    q_removeall(p);
     q_push(&L0, p);
   }
   while (q_size(&L3))
   {
     p = q_front(&L3);
     p->ticks = 0;
-    q_pop(&L3);
+    q_removeall(p);
     q_push(&L0, p);
   }
   release(&ptable.lock);
@@ -392,7 +392,7 @@ scheduler(void)
 
       if (p == nullptr || p->state == ZOMBIE || p->state == UNUSED)  // ?(p->state != RUNNABLE)
       {
-        q_pop(&MQ);
+        q_removeall(p);
         release(&ptable.lock);
         continue;
       }
@@ -414,7 +414,7 @@ scheduler(void)
       p = q_front(&L0);
       if (p->state != RUNNABLE)
       {
-        q_pop(&L0);
+        q_removeall(p);
         if (p->state == SLEEPING)
           q_push(&L0, p);
         release(&ptable.lock);
@@ -432,7 +432,7 @@ scheduler(void)
       if (L0.time_quantum <= p->ticks)
       {
         p->ticks = 0;
-        q_pop(&L0);
+        q_removeall(p);
         if (p->pid % 2 == 1)
           q_push(&L1, p);
         else
@@ -441,7 +441,7 @@ scheduler(void)
         continue;
       }
 
-      q_pop(&L0);
+      q_removeall(p);
       q_push(&L0, p);
 
       release(&ptable.lock);
@@ -454,7 +454,7 @@ scheduler(void)
       p = q_front(&L1);
       if (p->state != RUNNABLE)
       {
-        q_pop(&L1);
+        q_removeall(p);
         if (p->state == SLEEPING)
           q_push(&L1, p);
         release(&ptable.lock);
@@ -472,13 +472,13 @@ scheduler(void)
       if (L1.time_quantum <= p->ticks)
       {
         p->ticks = 0;
-        q_pop(&L1);
+        q_removeall(p);
         q_push(&L3, p);
         release(&ptable.lock);
         continue;
       }
 
-      q_pop(&L1);
+      q_removeall(p);
       q_push(&L1, p);
 
       release(&ptable.lock);
@@ -491,7 +491,7 @@ scheduler(void)
       p = q_front(&L2);
       if (p->state != RUNNABLE)
       {
-        q_pop(&L2);
+        q_removeall(p);
         if (p->state == SLEEPING)
           q_push(&L2, p);
         release(&ptable.lock);
@@ -509,13 +509,13 @@ scheduler(void)
       if (L2.time_quantum <= p->ticks)
       {
         p->ticks = 0;
-        q_pop(&L2);
+        q_removeall(p);
         q_push(&L3, p);
         release(&ptable.lock);
         continue;
       }
 
-      q_pop(&L2);
+      q_removeall(p);
       q_push(&L2, p);
 
       release(&ptable.lock);
