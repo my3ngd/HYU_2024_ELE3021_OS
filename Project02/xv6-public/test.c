@@ -166,8 +166,6 @@ int main(int argc, char *argv[])
       }
       if(x == 99) count[4]++;
       else count[x]++;
-      if (x != 0 && x != 1 && x != 2 && x != 3)
-        printf(1, "what the fuck? x = %d(should be 99)\n", x);
       sleep(1);
     }
     printf(1, "Process %d\n", pid);

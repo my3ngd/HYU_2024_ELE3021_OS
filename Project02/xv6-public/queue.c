@@ -38,6 +38,17 @@ q_empty(struct proc_queue *q)
   return q->front == q->back;
 }
 
+// is runnable process exist?
+int
+q_runnable(struct proc_queue *q)
+{
+  if (q_empty(q)) return 0;
+  for (int i = q->front; i != q->back; i = nxt(i))
+    if (q->queue[i]->state == RUNNABLE)
+      return 1;
+  return 0;
+}
+
 // queue size
 int
 q_size(struct proc_queue *q)

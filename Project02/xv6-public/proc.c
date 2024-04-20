@@ -409,12 +409,14 @@ scheduler(void)
     }
 
     // L0
-    if (!q_empty(&L0))
+    if (q_runnable(&L0))
     {
       p = q_front(&L0);
       if (p->state != RUNNABLE)
       {
         q_pop(&L0);
+        if (p->state == SLEEPING)
+          q_push(&L0, p);
         release(&ptable.lock);
         continue;
       }
@@ -447,12 +449,14 @@ scheduler(void)
     }
 
     // L1
-    if (!q_empty(&L1))
+    if (q_runnable(&L1))
     {
       p = q_front(&L1);
       if (p->state != RUNNABLE)
       {
         q_pop(&L1);
+        if (p->state == SLEEPING)
+          q_push(&L1, p);
         release(&ptable.lock);
         continue;
       }
@@ -482,12 +486,14 @@ scheduler(void)
     }
 
     // L2
-    if (!q_empty(&L2))
+    if (q_runnable(&L2))
     {
       p = q_front(&L2);
       if (p->state != RUNNABLE)
       {
         q_pop(&L2);
+        if (p->state == SLEEPING)
+          q_push(&L2, p);
         release(&ptable.lock);
         continue;
       }
@@ -517,10 +523,10 @@ scheduler(void)
     }
 
     // L3
-    if (!q_empty(&L3))
+    if (q_runnable(&L3))
     {
       p = q_top(&L3);
-      if (p->state != RUNNABLE)
+      if (p->state != RUNNABLE && p->state != SLEEPING)
       {
         q_remove(&L3, p);
         release(&ptable.lock);
@@ -662,12 +668,8 @@ wakeup1(void *chan)
     if(p->state == SLEEPING && p->chan == chan)
     {
       p->state = RUNNABLE;
-      if (q_exist(&MQ, p))
-        return ;
-      q_remove(&L1, p);
-      q_remove(&L2, p);
-      q_remove(&L3, p);
-      q_push(&L0, p);
+      if (!q_exist(&MQ, p) && !q_exist(&L0, p) && !q_exist(&L1, p) && !q_exist(&L2, p) && !q_exist(&L3, p))
+        q_push(&L0, p);
     }
   }
 }
@@ -697,10 +699,8 @@ kill(int pid)
       if(p->state == SLEEPING)
       {
         p->state = RUNNABLE;
-        q_remove(&L1, p);
-        q_remove(&L2, p);
-        q_remove(&L3, p);
-        q_push(&L0, p);
+        if (!q_exist(&MQ, p) && !q_exist(&L0, p) && !q_exist(&L1, p) && !q_exist(&L2, p) && !q_exist(&L3, p))
+          q_push(&L0, p);
       }
       release(&ptable.lock);
       return 0;

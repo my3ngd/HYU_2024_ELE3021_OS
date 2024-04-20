@@ -192,6 +192,7 @@ void            clearpteu(pde_t *pgdir, char *uva);
 // queue.c
 void            init_queue(struct proc_queue*, int);
 int             q_empty(struct proc_queue*);
+int             q_runnable(struct proc_queue*);
 struct proc*    q_front(struct proc_queue*);
 int             q_exist(struct proc_queue*, struct proc*);
 void            q_clear(struct proc_queue*);
