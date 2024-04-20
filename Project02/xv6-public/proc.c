@@ -329,24 +329,40 @@ wait(void)
   }
 }
 
-//PAGEBREAK: 42
-// Per-CPU process scheduler.
-// Each CPU calls scheduler() after setting itself up.
-// Scheduler never returns.  It loops, doing:
-//  - choose a process to run
-//  - swtch to start running that process
-//  - eventually that process transfers control
-//      via swtch back to the scheduler.
-int prev_ticks;
-void update_tick(struct proc* p)
+void
+priority_boosting(void)
 {
-  acquire(&tickslock);
-  if (prev_ticks != ticks)
+  acquire(&ptable.lock);
+  struct proc* p;
+  for (int i = 0; i < q_size(&L0); i++)  // iteration for L0 size (not while statement!)
   {
-    prev_ticks = ticks;
-    p->ticks++;
+    p = q_front(&L0);
+    p->ticks = 0;  // this loop is for here
+    q_pop(&L0);
+    q_push(&L0, p);
   }
-  release(&tickslock);
+  while (q_size(&L1))
+  {
+    p = q_front(&L1);
+    p->ticks = 0;
+    q_pop(&L1);
+    q_push(&L0, p);
+  }
+  while (q_size(&L2))
+  {
+    p = q_front(&L2);
+    p->ticks = 0;
+    q_pop(&L2);
+    q_push(&L0, p);
+  }
+  while (q_size(&L3))
+  {
+    p = q_front(&L3);
+    p->ticks = 0;
+    q_pop(&L3);
+    q_push(&L0, p);
+  }
+  release(&ptable.lock);
   return ;
 }
 
@@ -356,7 +372,6 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = nullptr;
-  int flag = 1;
   
   for(;;)
   {
@@ -392,47 +407,6 @@ scheduler(void)
       release(&ptable.lock);
       continue;
     }
-    
-    // Priority Boosting
-    acquire(&tickslock);
-    if (ticks % 100 == 0) flag = 1;
-    if (ticks % 100 == 99 && flag == 1)
-    {
-      flag = 0;
-      // cprintf("\t\tBOOST: [%d | %d %d %d %d] ", q_size(&MQ), q_size(&L0), q_size(&L1), q_size(&L2), q_size(&L3));
-      release(&tickslock);
-      for (int i = 0; i < q_size(&L0); i++)  // iteration for L0 size (not while statement!)
-      {
-        p = q_front(&L0);
-        p->ticks = 0;  // this loop is for here
-        q_pop(&L0);
-        q_push(&L0, p);
-      }
-      while (q_size(&L1))
-      {
-        p = q_front(&L1);
-        p->ticks = 0;
-        q_pop(&L1);
-        q_push(&L0, p);
-      }
-      while (q_size(&L2))
-      {
-        p = q_front(&L2);
-        p->ticks = 0;
-        q_pop(&L2);
-        q_push(&L0, p);
-      }
-      while (q_size(&L3))
-      {
-        p = q_front(&L3);
-        p->ticks = 0;
-        q_pop(&L3);
-        q_push(&L0, p);
-      }
-      release(&ptable.lock);
-      continue;
-    }
-    release(&tickslock);
 
     // L0
     if (!q_empty(&L0))
@@ -445,7 +419,7 @@ scheduler(void)
         continue;
       }
 
-      if (L0.time_quantum <= (p->ticks))
+      if (L0.time_quantum <= p->ticks)
       {
         p->ticks = 0;
         q_pop(&L0);
@@ -464,7 +438,6 @@ scheduler(void)
       swtch(&(c->scheduler), p->context);
       switchkvm();
       c->proc = 0;
-      update_tick(p);
 
       q_pop(&L0);
       q_push(&L0, p);
@@ -484,7 +457,7 @@ scheduler(void)
         continue;
       }
 
-      if (L1.time_quantum <= (p->ticks))
+      if (L1.time_quantum <= p->ticks)
       {
         p->ticks = 0;
         q_pop(&L1);
@@ -500,7 +473,6 @@ scheduler(void)
       swtch(&(c->scheduler), p->context);
       switchkvm();
       c->proc = 0;
-      update_tick(p);
 
       q_pop(&L1);
       q_push(&L1, p);
@@ -520,7 +492,7 @@ scheduler(void)
         continue;
       }
 
-      if (L2.time_quantum <= (p->ticks))
+      if (L2.time_quantum <= p->ticks)
       {
         p->ticks = 0;
         q_pop(&L2);
@@ -536,7 +508,6 @@ scheduler(void)
       swtch(&(c->scheduler), p->context);
       switchkvm();
       c->proc = 0;
-      update_tick(p);
 
       q_pop(&L2);
       q_push(&L2, p);
@@ -556,7 +527,7 @@ scheduler(void)
         continue;
       }
 
-      if (L3.time_quantum <= (p->ticks))
+      if (L3.time_quantum <= p->ticks)
       {
         p->ticks = 0;
         if (0 < p->priority)
@@ -572,9 +543,6 @@ scheduler(void)
       swtch(&(c->scheduler), p->context);
       switchkvm();
       c->proc = 0;
-      update_tick(p);
-      q_remove(&L3, p);
-      q_push(&L3, p);
 
       release(&ptable.lock);
       continue;
@@ -694,6 +662,8 @@ wakeup1(void *chan)
     if(p->state == SLEEPING && p->chan == chan)
     {
       p->state = RUNNABLE;
+      if (q_exist(&MQ, p))
+        return ;
       q_remove(&L1, p);
       q_remove(&L2, p);
       q_remove(&L3, p);
