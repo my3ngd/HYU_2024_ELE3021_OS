@@ -390,7 +390,7 @@ scheduler(void)
       p = q_front(&MQ);
       p->queue_level = 99;
 
-      if (p == nullptr || p->state == ZOMBIE || p->state == UNUSED)  // (p->state != RUNNABLE)
+      if (p == nullptr || p->state == ZOMBIE || p->state == UNUSED)  // ?(p->state != RUNNABLE)
       {
         q_pop(&MQ);
         release(&ptable.lock);
@@ -419,6 +419,14 @@ scheduler(void)
         continue;
       }
 
+      // run
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+      c->proc = 0;
+
       if (L0.time_quantum <= p->ticks)
       {
         p->ticks = 0;
@@ -430,14 +438,6 @@ scheduler(void)
         release(&ptable.lock);
         continue;
       }
-
-      // run
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-      c->proc = 0;
 
       q_pop(&L0);
       q_push(&L0, p);
@@ -457,6 +457,14 @@ scheduler(void)
         continue;
       }
 
+      // run
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+      c->proc = 0;
+
       if (L1.time_quantum <= p->ticks)
       {
         p->ticks = 0;
@@ -465,14 +473,6 @@ scheduler(void)
         release(&ptable.lock);
         continue;
       }
-
-      // run
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-      c->proc = 0;
 
       q_pop(&L1);
       q_push(&L1, p);
@@ -492,6 +492,14 @@ scheduler(void)
         continue;
       }
 
+      // run
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+      c->proc = 0;
+
       if (L2.time_quantum <= p->ticks)
       {
         p->ticks = 0;
@@ -500,14 +508,6 @@ scheduler(void)
         release(&ptable.lock);
         continue;
       }
-
-      // run
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-      c->proc = 0;
 
       q_pop(&L2);
       q_push(&L2, p);
@@ -527,6 +527,14 @@ scheduler(void)
         continue;
       }
 
+      // run
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+      c->proc = 0;
+
       if (L3.time_quantum <= p->ticks)
       {
         p->ticks = 0;
@@ -535,14 +543,6 @@ scheduler(void)
         release(&ptable.lock);
         continue;
       }
-
-      // run
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-      c->proc = 0;
 
       release(&ptable.lock);
       continue;
