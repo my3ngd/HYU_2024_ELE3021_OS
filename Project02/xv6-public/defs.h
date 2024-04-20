@@ -189,20 +189,20 @@ void            clearpteu(pde_t *pgdir, char *uva);
 
 // project02
 // queue.c
-void            init_queue(struct proc_queue* q, int queue_level);
-int             q_empty(struct proc_queue* q);
-struct proc*    q_front(struct proc_queue* q);
-int             q_exist(struct proc_queue* q, struct proc* p);
-void            q_clear(struct proc_queue* q);
-void            q_push(struct proc_queue* q, struct proc* p);
-void            q_pop(struct proc_queue* q);
-void            q_setfront(struct proc_queue* q, struct proc* p);
-void            q_remove(struct proc_queue* q, struct proc* p);
-struct proc*    q_top(struct proc_queue* pq);
-void            print_queue(struct proc_queue* q);
+void            init_queue(struct proc_queue*, int);
+int             q_empty(struct proc_queue*);
+struct proc*    q_front(struct proc_queue*);
+int             q_exist(struct proc_queue*, struct proc*);
+void            q_clear(struct proc_queue*);
+void            q_push(struct proc_queue*, struct proc*);
+void            q_pop(struct proc_queue*);
+void            q_remove(struct proc_queue*, struct proc*);
+struct proc*    q_top(struct proc_queue*);
+int             q_size(struct proc_queue*);
+// void            print_queue(struct proc_queue* q);
 
 // monopoly.c
-int             setmonopoly(int pid, int password);
+int             setmonopoly(int, int);
 void            monopolize(void);
 void            unmonopolize(void);
 

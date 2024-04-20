@@ -8,7 +8,7 @@
 #include "spinlock.h"
 
 
-extern int monopolized;
+extern int is_monopolized;
 extern uint ticks;
 extern struct proc_queue L0;
 extern struct proc_queue L1;
@@ -61,7 +61,7 @@ setmonopoly(int pid, int password)
       q_push(&MQ, p);  // new queue_level(99) also determined
 
       release(&ptable.lock);
-      return 0;
+      return q_size(&MQ);
     }
   }
   // -1: pid not exist
@@ -73,7 +73,7 @@ setmonopoly(int pid, int password)
 void
 monopolize(void)
 {
-  monopolized = 1;
+  is_monopolized = 1;
   return ;
 }
 
@@ -81,7 +81,7 @@ monopolize(void)
 void
 unmonopolize(void)
 {
-  monopolized = 0;
+  is_monopolized = 0;
   acquire(&tickslock);
   ticks = 0;
   release(&tickslock);

@@ -6,178 +6,115 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
-#define nullptr (void*)0
 
 extern struct {
   struct spinlock lock;
   struct proc proc[NPROC];
 } ptable;
 
+const int SZ = NPROC+1;
+
+int
+nxt(int i)
+{
+  return (i+1)%SZ;
+}
+
+
 void
 init_queue(struct proc_queue* q, int queue_level)
 {
-  q->queue_level = queue_level;
-  q->time_quantum = (queue_level + 1) * 2;
-  q->size = 0;
-  q->front = q->back = nullptr;
-  return ;
+  q->level = queue_level;
+  q->time_quantum = queue_level * 2 + 2;
+  q->front = q->back = 0;
+  for (int i = 0; i <= NPROC; i++)
+    q->queue[i] = nullptr;
 }
 
+// is queue empty
 int
-q_empty(struct proc_queue* q)
+q_empty(struct proc_queue *q)
 {
-  return q->size == 0;
+  return q->front == q->back;
 }
 
-struct proc*
-q_front(struct proc_queue* q)
-{
-  return q->front;
-}
-
+// queue size
 int
-q_exist(struct proc_queue* q, struct proc* p)
+q_size(struct proc_queue *q)
 {
-  if (q_empty(q)) return 0;
-  struct proc* cur = q->front;
-  do  // loop need to run more than 1
-  {
-    if (cur == p) return 1;
-    cur = cur->next;
-  } while (cur != q->front);
+  if (q->back < q->front)
+    return q->back - q->front + SZ;
+  return q->back - q->front;
+}
+
+// is p exist in q
+int
+q_exist(struct proc_queue *q, struct proc *p)
+{
+  for (int i = q->front; i != q->back; i = nxt(i))
+    if (q->queue[i] == p)
+      return 1;
   return 0;
 }
 
 void
-q_clear(struct proc_queue* q)
+q_push(struct proc_queue *q, struct proc *p)
 {
-  q->front = q->back = nullptr;
-  q->size = 0;
-}
-
-void
-q_push(struct proc_queue* q, struct proc* p)
-{
-  p->queue_level = q->queue_level;
-  p->ticks = 0;
-  if (q_empty(q))
-  {
-    q->front = p;
-    q->back = p;
-    p->next = p;
-    q->size++;
-    return ;
-  }
-  q->size++;
-  q->back->next = p;
-  q->back = p;
-  p->next = q->front;
+  if (q_exist(q, p)) return ;
+  p->queue_level = q->level;
+  q->queue[q->back] = p;
+  q->back = nxt(q->back);
   return ;
 }
 
 void
-q_pop(struct proc_queue* q)
+q_pop(struct proc_queue *q)
 {
-  if (q_empty(q)) return;  // may not happen
-  struct proc* cur = q->front->next;
-  q->front = cur;
-  q->size--;
-}
-
-// rotate queue
-void
-q_setfront(struct proc_queue* q, struct proc* p)
-{
-  struct proc* pre = q->back;
-  struct proc* cur = pre->next;  // is q->front
-  while (cur != p)
-  {
-    pre = cur;
-    cur = cur->next;
-  }
-  q->front = cur;
-  q->back = pre;
-  return ;
+  q->queue[q->front] = nullptr;
+  q->front = nxt(q->front);
 }
 
 void
-q_remove(struct proc_queue* q, struct proc* p)
+q_remove(struct proc_queue *q, struct proc *p)
 {
-  if (q_empty(q)) return ;  // not able to remove; q_empty queue
-  if (q->size == 1)
+  int index = -1;
+  for (int i = q->front; i != q->back; i = nxt(i))
   {
-    if (q->front != p) return ;
-    q->front = q->back = nullptr;
-    q->size = 0;
-    return ;
-  }
-
-  struct proc* pre = q->back;
-  struct proc* cur = pre->next;
-
-  // find p
-  while (cur != p)
-  {
-    pre = cur;
-    cur = cur->next;
-    if (cur->next == q->front && cur != p)  // p is not in q
-      return ;
-  }
-
-  // unlink
-  if (cur == q->front)
-  {
-    q->front = cur->next;
-    q->back->next = q->front;
-  }
-  else if (cur == q->back)
-  {
-    q->back = pre;
-    q->back->next = q->front;
-  }
-  else
-  {
-    pre->next = cur->next;
-  }
-  q->size--;
-  return ;
-}
-
-// for priority queue (L3)
-struct proc*
-q_top(struct proc_queue* pq)
-{
-  if (q_empty(pq)) return nullptr;
-  struct proc* cur = pq->front;
-  struct proc* res = cur;
-  int max_priority = pq->front->priority;
-
-  do
-  {
-    cur = cur->next;
-    if (cur->priority > max_priority)
+    if (q->queue[i] == p)
     {
-      max_priority = cur->priority;
-      res = cur;
+      index = i;
+      break;
     }
   }
-  while (cur != pq->front);
-  return res;
+  if (index == -1)
+    return ;  // not found
+  for (int i = index; i != q->back; i = nxt(i))
+  {
+    q->queue[i] = q->queue[nxt(i)];
+    q->queue[nxt(i)] = nullptr;
+  }
+  q->back = (q->back+SZ-1)%SZ;
+  return ;
 }
 
-void
-print_queue(struct proc_queue *q)
+struct proc*
+q_front(struct proc_queue *q)
 {
-  cprintf("===========================================\n");
-  cprintf("  size = %d\n", q->size);
-  struct proc *p = q->front;
-  do
-  {
-    cprintf("> pid = %d\n", p->pid);
-    p = p->next;
-  } while (p != q->front);
-  
-  cprintf("===========================================\n");
+  if (q_empty(q))  // may not happen
+    return nullptr;
+  return q->queue[q->front];
+}
+
+struct proc*
+q_top(struct proc_queue *q)
+{
+  if (q_empty(q))  // may not happen
+    return nullptr;
+  struct proc *res = q->queue[q->front];
+  for (int i = q->front; i != q->back; i = nxt(i))
+    if (res->priority < q->queue[i]->priority)
+      res = q->queue[i];
+  return res;
 }
 
 // APIs
@@ -185,8 +122,7 @@ print_queue(struct proc_queue *q)
 int
 getlev(void)
 {
-  struct proc* curr_proc = myproc();
-  return curr_proc->queue_level;
+  return myproc()->queue_level;
 }
 
 int

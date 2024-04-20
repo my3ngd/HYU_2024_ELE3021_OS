@@ -21,7 +21,7 @@ struct proc_queue MQ;  // FCFS (MoQ)
 
 static struct proc *initproc;
 
-int monopolized = 0;   // MoQ activated state
+int is_monopolized = 0;   // MoQ activated state
 int nextpid = 1;
 extern uint ticks;     // from clock
 extern void forkret(void);
@@ -165,6 +165,7 @@ userinit(void)
   acquire(&ptable.lock);
 
   p->state = RUNNABLE;
+  q_push(&L0, p);  // init process should be inserted
 
   release(&ptable.lock);
 }
@@ -231,6 +232,7 @@ fork(void)
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
+  q_push(&L0, np);  // new process should be inserted
 
   release(&ptable.lock);
 
@@ -335,177 +337,138 @@ wait(void)
 //  - swtch to start running that process
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
-void
-scheduler_deprecated(void)
+int prev_ticks;
+void update_tick(struct proc* p)
 {
-  struct proc *p;
-  struct cpu *c = mycpu();
-  c->proc = 0;
-  
-  for(;;){
-    // Enable interrupts on this processor.
-    sti();
-
-    // Loop over process table looking for process to run.
-    acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
-
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
-    }
-    release(&ptable.lock);
+  acquire(&tickslock);
+  if (prev_ticks != ticks)
+  {
+    prev_ticks = ticks;
+    p->ticks++;
   }
+  release(&tickslock);
+  return ;
 }
 
-
-
-/* scheduler 함수
- * 무한 반복문으로 스케쥴링을 실행함
- * MoQ를 가장 먼저 처리하여 Priority Boosting보다 먼저 처리
- * 그 다음 Priority Boosting 처리
- * 그 다음 L0 ~ L3에서 찾아서 처리
-*/
 void
 scheduler(void)
 {
-  struct proc *p;  // process in loop
+  struct proc *p;
   struct cpu *c = mycpu();
-  c->proc = 0;
-
-  for (;;)
+  c->proc = nullptr;
+  int flag = 1;
+  
+  for(;;)
   {
-    // Enable interrupts on this processor.
     sti();
     acquire(&ptable.lock);
 
-    // cprintf("-- %d\n", ticks);
-    // cprintf("[%d | %d %d %d %d]\n", MQ.size, L0.size, L1.size, L2.size, L3.size);
-
-    // find not pushed processes
-    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    {
-      if (p->pid != 0 && p->state == RUNNABLE)
-      {
-        if (q_exist(&L0, p)) continue;
-        if (q_exist(&L1, p)) continue;
-        if (q_exist(&L2, p)) continue;
-        if (q_exist(&L3, p)) continue;
-        if (q_exist(&MQ, p)) continue;
-        q_push(&L0, p);
-      }
-    }
-
-    // MoQ
-    if (monopolized)
+    // Monopoly Queue
+    if (is_monopolized)
     {
       if (q_empty(&MQ))
       {
-        unmonopolize();  // TODO
+        unmonopolize();
         release(&ptable.lock);
         continue;
       }
-      p = q_front(&MQ);  // same with MQ.front
-      // if monopolized process is in other queue, remove
-      if (q_exist(&L0, p)) q_remove(&L0, p);
-      if (q_exist(&L1, p)) q_remove(&L1, p);
-      if (q_exist(&L2, p)) q_remove(&L2, p);
-      if (q_exist(&L3, p)) q_remove(&L3, p);
-      
-      // if monopoly process not runnable
-      // TODO: idk what i have to do here
-      if (p->state != RUNNABLE)
-      {
-        q_remove(&MQ, p);
-        release(&ptable.lock);
-        continue;
-      }
+      p = q_front(&MQ);
+      p->queue_level = 99;
 
+      if (p == nullptr || p->state == ZOMBIE || p->state == UNUSED)  // (p->state != RUNNABLE)
+      {
+        q_pop(&MQ);
+        release(&ptable.lock);
+        continue;
+      }
+      // run
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
-
       swtch(&(c->scheduler), p->context);
       switchkvm();
-      c->proc = nullptr;
+      c->proc = 0;
 
-      p->ticks++;
       release(&ptable.lock);
       continue;
     }
-
+    
     // Priority Boosting
-    if (ticks == 99)
+    acquire(&tickslock);
+    if (ticks % 100 == 0) flag = 1;
+    if (ticks % 100 == 99 && flag == 1)
     {
-      ticks++;  // for run only once. ticks = 98 -> (99) -> 100 -> 0. so priority boosting happens every 100 ticks (same)
-      // clear all queue except MoQ.
-      q_clear(&L0);
-      q_clear(&L1);
-      q_clear(&L2);
-      q_clear(&L3);
-      q_clear(&MQ);  // "all" process are readjusted to the L0 queue.
-      // now all process except monopolized is not in any queue, push all them to L0
-
-      for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+      flag = 0;
+      // cprintf("\t\tBOOST: [%d | %d %d %d %d] ", q_size(&MQ), q_size(&L0), q_size(&L1), q_size(&L2), q_size(&L3));
+      release(&tickslock);
+      for (int i = 0; i < q_size(&L0); i++)  // iteration for L0 size (not while statement!)
       {
-        // but if MQ is exception, add here...
-        if (p->state == RUNNABLE)  // no running process now... maybe?
-        {
-          p->ticks = 0;     // reset run tick
-          p->priority = 0;  // reset priority
-          q_push(&L0, p);
-        }
+        p = q_front(&L0);
+        p->ticks = 0;  // this loop is for here
+        q_pop(&L0);
+        q_push(&L0, p);
       }
+      while (q_size(&L1))
+      {
+        p = q_front(&L1);
+        p->ticks = 0;
+        q_pop(&L1);
+        q_push(&L0, p);
+      }
+      while (q_size(&L2))
+      {
+        p = q_front(&L2);
+        p->ticks = 0;
+        q_pop(&L2);
+        q_push(&L0, p);
+      }
+      while (q_size(&L3))
+      {
+        p = q_front(&L3);
+        p->ticks = 0;
+        q_pop(&L3);
+        q_push(&L0, p);
+      }
+      release(&ptable.lock);
+      continue;
     }
+    release(&tickslock);
 
     // L0
     if (!q_empty(&L0))
     {
       p = q_front(&L0);
-      // not runnable -> ignore
       if (p->state != RUNNABLE)
       {
-        // if p is only process in L0
-        if (p->next == p)
-          q_clear(&L0);
-        else
-          L0.front = p->next;
+        q_pop(&L0);
         release(&ptable.lock);
         continue;
       }
 
-      // main part
+      if (L0.time_quantum <= (p->ticks))
+      {
+        p->ticks = 0;
+        q_pop(&L0);
+        if (p->pid % 2 == 1)
+          q_push(&L1, p);
+        else
+          q_push(&L2, p);
+        release(&ptable.lock);
+        continue;
+      }
+
+      // run
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
-
       swtch(&(c->scheduler), p->context);
       switchkvm();
-      c->proc = nullptr;
-      q_setfront(&L0, p->next);
+      c->proc = 0;
+      update_tick(p);
 
-      // p use all time qunatum
-      if (L0.time_quantum <= ++(p->ticks))
-      {
-        p->ticks = 0;  // clear used time quantum
-        q_remove(&L0, p);
-        if (p->pid % 2)
-          q_push(&L1, p);  // odd -> L1
-        else
-          q_push(&L2, p);  // even -> L2
-      }
+      q_pop(&L0);
+      q_push(&L0, p);
+
       release(&ptable.lock);
       continue;
     }
@@ -513,37 +476,35 @@ scheduler(void)
     // L1
     if (!q_empty(&L1))
     {
-      // print_queue(&L1);
       p = q_front(&L1);
-      // not runnable -> ignore
       if (p->state != RUNNABLE)
       {
-        // if p is only process in L1
-        if (p->next == p)
-          q_clear(&L1);
-        else
-          L1.front = p->next;
+        q_pop(&L1);
         release(&ptable.lock);
         continue;
       }
 
-      // main part
+      if (L1.time_quantum <= (p->ticks))
+      {
+        p->ticks = 0;
+        q_pop(&L1);
+        q_push(&L3, p);
+        release(&ptable.lock);
+        continue;
+      }
+
+      // run
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
-
       swtch(&(c->scheduler), p->context);
       switchkvm();
-      c->proc = nullptr;
-      q_setfront(&L1, p->next);
+      c->proc = 0;
+      update_tick(p);
 
-      // p use all time quantum
-      if (L1.time_quantum <= ++(p->ticks))
-      {
-        p->ticks = 0;  // clear used time quantum
-        q_remove(&L1, p);
-        q_push(&L3, p);
-      }
+      q_pop(&L1);
+      q_push(&L1, p);
+
       release(&ptable.lock);
       continue;
     }
@@ -552,79 +513,77 @@ scheduler(void)
     if (!q_empty(&L2))
     {
       p = q_front(&L2);
-      // not runnable -> ignore
       if (p->state != RUNNABLE)
       {
-        // if p is only process in L2
-        if (p->next == p)
-          q_clear(&L2);
-        else
-          L2.front = p->next;
+        q_pop(&L2);
         release(&ptable.lock);
         continue;
       }
 
-      // main part
+      if (L2.time_quantum <= (p->ticks))
+      {
+        p->ticks = 0;
+        q_pop(&L2);
+        q_push(&L3, p);
+        release(&ptable.lock);
+        continue;
+      }
+
+      // run
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
-
       swtch(&(c->scheduler), p->context);
       switchkvm();
-      c->proc = nullptr;
-      q_setfront(&L2, p->next);
+      c->proc = 0;
+      update_tick(p);
 
-      // p use all time quantum
-      if (L2.time_quantum <= ++(p->ticks))
-      {
-        p->ticks = 0;  // clear used time quantum
-        q_remove(&L2, p);
-        q_push(&L3, p);
-      }
+      q_pop(&L2);
+      q_push(&L2, p);
+
       release(&ptable.lock);
       continue;
     }
 
-    // L3 (priority scheduling)
+    // L3
     if (!q_empty(&L3))
     {
-      p = q_top(&L3);  // not front; q_top finds top priority(and first) process
-      // not runnable -> ignore
+      p = q_top(&L3);
       if (p->state != RUNNABLE)
       {
-        // if p is only process in L3
-        if (p->next == p)
-          q_clear(&L3);
-        else
-          L3.front = p->next;
+        q_remove(&L3, p);
         release(&ptable.lock);
         continue;
       }
 
-      // main part
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-      c->proc = nullptr;
-
-      // p use all time quantum
-      // in L3, just priority--
-      if (L3.time_quantum <= ++(p->ticks))
+      if (L3.time_quantum <= (p->ticks))
       {
         p->ticks = 0;
         if (0 < p->priority)
           p->priority--;
+        release(&ptable.lock);
+        continue;
       }
+
+      // run
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+      c->proc = 0;
+      update_tick(p);
+      q_remove(&L3, p);
+      q_push(&L3, p);
+
       release(&ptable.lock);
       continue;
     }
-
     release(&ptable.lock);
   }
 }
+
+
 
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores
@@ -731,8 +690,16 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  {
     if(p->state == SLEEPING && p->chan == chan)
+    {
       p->state = RUNNABLE;
+      q_remove(&L1, p);
+      q_remove(&L2, p);
+      q_remove(&L3, p);
+      q_push(&L0, p);
+    }
+  }
 }
 
 // Wake up all processes sleeping on chan.
@@ -758,7 +725,13 @@ kill(int pid)
       p->killed = 1;
       // Wake process from sleep if necessary.
       if(p->state == SLEEPING)
+      {
         p->state = RUNNABLE;
+        q_remove(&L1, p);
+        q_remove(&L2, p);
+        q_remove(&L3, p);
+        q_push(&L0, p);
+      }
       release(&ptable.lock);
       return 0;
     }

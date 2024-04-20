@@ -53,7 +53,6 @@ struct proc {
   // for process queue
   int priority;                // priority of this proc (in L3 queue)
   int queue_level;             // queue level of this proc (0 ~ 3)
-  struct proc* next;           // next process in queue
   int ticks;                   // used ticks
 };
 
@@ -66,10 +65,8 @@ struct proc {
 // process queue
 // L_i queue => time quantum = 2i + 2
 struct proc_queue {
-  struct proc* front;
-  struct proc* back;
-  int queue_level;
+  struct proc* queue[NPROC+1];
+  int front, back;
+  int level;
   int time_quantum;
-  int size;  // queue size
 };
-
