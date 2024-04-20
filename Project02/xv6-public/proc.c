@@ -528,7 +528,7 @@ scheduler(void)
       p = q_top(&L3);
       if (p->state != RUNNABLE && p->state != SLEEPING)
       {
-        q_remove(&L3, p);
+        q_removeall(p);
         release(&ptable.lock);
         continue;
       }
