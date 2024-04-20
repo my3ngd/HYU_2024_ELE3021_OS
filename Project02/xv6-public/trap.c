@@ -54,7 +54,7 @@ trap(struct trapframe *tf)
       ticks++;
       if (!is_monopolized && 100 <= ticks)
         priority_boosting();
-      ticks %= 100;
+      ticks = 0;
       wakeup(&ticks);
       release(&tickslock);
     }
