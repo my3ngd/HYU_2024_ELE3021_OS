@@ -419,7 +419,7 @@ scheduler(void)
         continue;
       }
 
-      if (L0.time_quantum <= (p->ticks))
+      if (L0.time_quantum <= p->ticks)
       {
         p->ticks = 0;
         q_pop(&L0);
@@ -457,7 +457,7 @@ scheduler(void)
         continue;
       }
 
-      if (L1.time_quantum <= (p->ticks))
+      if (L1.time_quantum <= p->ticks)
       {
         p->ticks = 0;
         q_pop(&L1);
@@ -492,7 +492,7 @@ scheduler(void)
         continue;
       }
 
-      if (L2.time_quantum <= (p->ticks))
+      if (L2.time_quantum <= p->ticks)
       {
         p->ticks = 0;
         q_pop(&L2);
@@ -527,7 +527,7 @@ scheduler(void)
         continue;
       }
 
-      if (L3.time_quantum <= (p->ticks))
+      if (L3.time_quantum <= p->ticks)
       {
         p->ticks = 0;
         if (0 < p->priority)
