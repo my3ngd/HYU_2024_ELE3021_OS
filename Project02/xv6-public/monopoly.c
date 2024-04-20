@@ -73,7 +73,6 @@ setmonopoly(int pid, int password)
 void
 monopolize(void)
 {
-  cprintf("[SYS] moq activated!\n");
   is_monopolized = 1;
   return ;
 }
@@ -82,7 +81,6 @@ monopolize(void)
 void
 unmonopolize(void)
 {
-  cprintf("[SYS] moq deactivated!\n");
   is_monopolized = 0;
   acquire(&tickslock);
   ticks = 0;
@@ -95,7 +93,6 @@ unmonopolize(void)
 int
 sys_setmonopoly(void)
 {
-  cprintf("[SYS] setmonopoly\n");
   int pid, password;
   if (argint(0, &pid) < 0 || argint(1, &password) < 0) return -5;  // argint fails (-5)
   return setmonopoly(pid, password);  // return wrapped function's return value ({size of MoQ} ~ -4)

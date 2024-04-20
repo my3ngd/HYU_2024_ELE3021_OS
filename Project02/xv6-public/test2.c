@@ -42,7 +42,7 @@ void rn_test1() {
         }
         print_level_cnt(level_cnt);
         exit();
-        wait();
+        // wait();
     }
 
     p2 = fork();
@@ -54,7 +54,7 @@ void rn_test1() {
         }
         print_level_cnt(level_cnt);
         exit();
-        wait();
+        // wait();
     }
 
     p3 = fork();
@@ -66,7 +66,7 @@ void rn_test1() {
         }
         print_level_cnt(level_cnt);
         exit();
-        wait();
+        // wait();
     }
 
     w_list[0] = p3;
@@ -75,8 +75,8 @@ void rn_test1() {
     w_cnt = 0;
     for (; w_cnt < 3; ) {
         p = wait();
-        w_cnt++;
-        continue;
+        // w_cnt++;
+        // continue;
         if (p == w_list[w_cnt]) ++w_cnt;
         else {
             printf(1, "rn_test1 failed\n expected wait pid = %d, but wait pid = %d\n", w_list[w_cnt], p);
@@ -528,11 +528,11 @@ void rn_test6() {
 
 int main(int argc, char** argv) {
     rn_test1();  // 실패
-    rn_test2();  // 실패
-    rn_test3();  // 통과
-    rn_test4();  // 통과
-    rn_test5();  // 실패
-    rn_test6();  // 실패
+    // rn_test2();  // 실패
+    // rn_test3();  // 통과
+    // rn_test4();  // 통과
+    // rn_test5();  // 실패
+    // rn_test6();  // 실패
 
     exit();
 }

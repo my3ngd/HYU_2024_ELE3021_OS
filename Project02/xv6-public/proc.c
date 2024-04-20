@@ -38,7 +38,7 @@ pinit(void)
   init_queue(&L1,  1);
   init_queue(&L2,  2);
   init_queue(&L3,  3);
-  init_queue(&MQ,  7);  // MoQ is FCFS queue, so don't have time quantum
+  init_queue(&MQ, 99);  // MoQ is FCFS queue, so don't have time quantum
   release(&ptable.lock);
 }
 
@@ -337,48 +337,12 @@ wait(void)
 //  - swtch to start running that process
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
-void
-scheduler__(void)
-{
-  struct proc *p;
-  struct cpu *c = mycpu();
-  c->proc = 0;
-  
-  for(;;){
-    // Enable interrupts on this processor.
-    sti();
-
-    // Loop over process table looking for process to run.
-    acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
-
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
-    }
-    release(&ptable.lock);
-  }
-}
-
 int prev_ticks;
 void update_tick(struct proc* p)
 {
   acquire(&tickslock);
   if (prev_ticks != ticks)
   {
-    // cprintf("\t%d %d\n", prev_ticks, ticks);
     prev_ticks = ticks;
     p->ticks++;
   }
@@ -399,20 +363,6 @@ scheduler(void)
     sti();
     acquire(&ptable.lock);
 
-    // assertion
-    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    {
-      if (p != nullptr && p->state == RUNNABLE)
-      {
-        if (!q_exist(&L0, p) && !q_exist(&L1, p) && !q_exist(&L2, p) && !q_exist(&L3, p) && !q_exist(&MQ, p))
-        {
-          cprintf("???\n");
-          q_push(&L0, p);
-          panic("force update\n");
-        }
-      }
-    }
-
     // Monopoly Queue
     if (is_monopolized)
     {
@@ -425,9 +375,8 @@ scheduler(void)
       p = q_front(&MQ);
       p->queue_level = 99;
 
-      if (p == nullptr || p->state == ZOMBIE)  // (p->state != RUNNABLE && p->state != SLEEPING)
+      if (p == nullptr || p->state == ZOMBIE || p->state == UNUSED)  // (p->state != RUNNABLE)
       {
-        cprintf("  MOQ process pid = %d end. current size = %d | lev = %d | state = %d\n", p->pid, q_size(&MQ), p->queue_level, p->state);
         q_pop(&MQ);
         release(&ptable.lock);
         continue;
@@ -443,13 +392,6 @@ scheduler(void)
       release(&ptable.lock);
       continue;
     }
-
-    // acquire(&tickslock);
-    // if (ticks % 100 == 99)
-    // {
-    //   cprintf("q sizes: %d, %d | monopolized: %d\n", q_size(&L0), q_size(&MQ), is_monopolized);
-    // }
-    // release(&tickslock);
     
     // Priority Boosting
     acquire(&tickslock);
@@ -457,7 +399,7 @@ scheduler(void)
     if (ticks % 100 == 99 && flag == 1)
     {
       flag = 0;
-      cprintf("\t\tBOOST: [%d | %d %d %d %d] ", q_size(&MQ), q_size(&L0), q_size(&L1), q_size(&L2), q_size(&L3));
+      // cprintf("\t\tBOOST: [%d | %d %d %d %d] ", q_size(&MQ), q_size(&L0), q_size(&L1), q_size(&L2), q_size(&L3));
       release(&tickslock);
       for (int i = 0; i < q_size(&L0); i++)  // iteration for L0 size (not while statement!)
       {
@@ -487,7 +429,6 @@ scheduler(void)
         q_pop(&L3);
         q_push(&L0, p);
       }
-      cprintf(" -> [%d | %d %d %d %d]\n", q_size(&MQ), q_size(&L0), q_size(&L1), q_size(&L2), q_size(&L3));
       release(&ptable.lock);
       continue;
     }
@@ -497,7 +438,7 @@ scheduler(void)
     if (!q_empty(&L0))
     {
       p = q_front(&L0);
-      if (p->state != RUNNABLE && p->state != SLEEPING)
+      if (p->state != RUNNABLE)
       {
         q_pop(&L0);
         release(&ptable.lock);
@@ -509,13 +450,9 @@ scheduler(void)
         p->ticks = 0;
         q_pop(&L0);
         if (p->pid % 2 == 1)
-        {
           q_push(&L1, p);
-        }
         else
-        {
           q_push(&L2, p);
-        }
         release(&ptable.lock);
         continue;
       }
@@ -540,7 +477,7 @@ scheduler(void)
     if (!q_empty(&L1))
     {
       p = q_front(&L1);
-      if (p->state != RUNNABLE && p->state != SLEEPING)
+      if (p->state != RUNNABLE)
       {
         q_pop(&L1);
         release(&ptable.lock);
@@ -576,7 +513,7 @@ scheduler(void)
     if (!q_empty(&L2))
     {
       p = q_front(&L2);
-      if (p->state != RUNNABLE && p->state != SLEEPING)
+      if (p->state != RUNNABLE)
       {
         q_pop(&L2);
         release(&ptable.lock);
@@ -612,7 +549,7 @@ scheduler(void)
     if (!q_empty(&L3))
     {
       p = q_top(&L3);
-      if (p->state != RUNNABLE && p->state != SLEEPING)
+      if (p->state != RUNNABLE)
       {
         q_remove(&L3, p);
         release(&ptable.lock);
@@ -636,12 +573,13 @@ scheduler(void)
       switchkvm();
       c->proc = 0;
       update_tick(p);
+      q_remove(&L3, p);
+      q_push(&L3, p);
 
       release(&ptable.lock);
       continue;
     }
     release(&ptable.lock);
-    cprintf("reached end\n");
   }
 }
 
@@ -846,31 +784,5 @@ int
 sys_yield(void)
 {
   yield();
-  return 0;
-}
-
-void rn_sleep(int ms) {
-  int prev, cur, ms_tick;
-
-  prev = lapic[0x0390 / 4];
-  ms_tick = 0;
-  for (; ;) {
-    cur = lapic[0x0390 / 4];
-
-    if (cur + 1000000 <= prev) {
-      if (++ms_tick == ms) break;
-      prev -= 1000000;
-    } else if (cur >= prev) {
-      prev += 10000000;
-    }
-  }
-  return ;
-}
-
-int sys_rn_sleep(void)
-{
-  int ms;
-  if (argint(1, &ms) < 0)
-    return -1;
   return 0;
 }
