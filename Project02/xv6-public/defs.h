@@ -199,7 +199,6 @@ void            q_clear(struct proc_queue*);
 void            q_push(struct proc_queue*, struct proc*);
 void            q_pop(struct proc_queue*);
 void            q_remove(struct proc_queue*, struct proc*);
-void            q_removeall(struct proc*);
 struct proc*    q_top(struct proc_queue*);
 int             q_size(struct proc_queue*);
 

@@ -51,7 +51,7 @@ trap(struct trapframe *tf)
   case T_IRQ0 + IRQ_TIMER:
     if(cpuid() == 0){
       acquire(&tickslock);
-      if (100 <= ++ticks && !is_monopolized)
+      if (100 <= ++ticks && !is_monopolized && mycpu()->proc == nullptr)
       {
         priority_boosting();
         ticks = 0;

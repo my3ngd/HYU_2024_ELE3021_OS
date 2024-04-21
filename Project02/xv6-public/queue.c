@@ -77,7 +77,8 @@ q_exist(struct proc_queue *q, struct proc *p)
 void
 q_push(struct proc_queue *q, struct proc *p)
 {
-  if (q_exist(q, p)) return ;
+  if (q_exist(q, p))
+    q_remove(q, p);
   p->queue_level = q->level;
   q->queue[q->back] = p;
   q->back = nxt(q->back);
@@ -112,16 +113,6 @@ q_remove(struct proc_queue *q, struct proc *p)
   }
   q->back = (q->back+SZ-1)%SZ;
   return ;
-}
-
-void
-q_removeall(struct proc *p)
-{
-  q_remove(&MQ, p);
-  q_remove(&L0, p);
-  q_remove(&L1, p);
-  q_remove(&L2, p);
-  q_remove(&L3, p);
 }
 
 struct proc*

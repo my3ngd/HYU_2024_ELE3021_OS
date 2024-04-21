@@ -338,28 +338,28 @@ priority_boosting(void)
   {
     p = q_front(&L0);
     p->ticks = 0;  // this loop is for here
-    q_removeall(p);
+    q_pop(&L0);
     q_push(&L0, p);
   }
   while (q_size(&L1))
   {
     p = q_front(&L1);
     p->ticks = 0;
-    q_removeall(p);
+    q_pop(&L1);
     q_push(&L0, p);
   }
   while (q_size(&L2))
   {
     p = q_front(&L2);
     p->ticks = 0;
-    q_removeall(p);
+    q_pop(&L2);
     q_push(&L0, p);
   }
   while (q_size(&L3))
   {
     p = q_front(&L3);
     p->ticks = 0;
-    q_removeall(p);
+    q_pop(&L3);
     q_push(&L0, p);
   }
   release(&ptable.lock);
@@ -400,133 +400,107 @@ scheduler(void)
       }
       p = q_front(&MQ);
       p->queue_level = 99;
-
-      if (p->state == ZOMBIE || p->state == UNUSED)  // ?(p->state != RUNNABLE)
+      if (p->state == ZOMBIE || p->state == UNUSED)
       {
         q_remove(&MQ, p);
         release(&ptable.lock);
         continue;
       }
-      // run
       run_proc(c, p);
-
       release(&ptable.lock);
       continue;
     }
-
     // L0
     if (q_runnable(&L0))
     {
       p = q_front(&L0);
+      q_pop(&L0);
       if (p->state != RUNNABLE)
       {
-        q_remove(&L0, p);
-        if (p->state == SLEEPING)
-          q_push(&L0, p);
         release(&ptable.lock);
         continue;
       }
-
-      // run
       run_proc(c, p);
-
       if (L0.time_quantum <= p->ticks)
       {
         p->ticks = 0;
-        q_remove(&L0, p);
-        if (p->pid % 2 == 1)
-          q_push(&L1, p);
-        else
-          q_push(&L2, p);
+        if (p->state == RUNNABLE)
+        {
+          if (p->pid % 2 == 1)
+            q_push(&L1, p);
+          else
+            q_push(&L2, p);
+        }
         release(&ptable.lock);
         continue;
       }
-
-      q_remove(&L0, p);
-      q_push(&L0, p);
+      if (p->state == RUNNABLE)
+        q_push(&L0, p);
 
       release(&ptable.lock);
       continue;
     }
-
     // L1
     if (q_runnable(&L1))
     {
       p = q_front(&L1);
+      q_pop(&L1);
       if (p->state != RUNNABLE)
       {
-        q_remove(&L1, p);
-        if (p->state == SLEEPING)
-          q_push(&L1, p);
         release(&ptable.lock);
         continue;
       }
-
-      // run
       run_proc(c, p);
-
       if (L1.time_quantum <= p->ticks)
       {
         p->ticks = 0;
-        q_remove(&L1, p);
-        q_push(&L3, p);
+        if (p->state == RUNNABLE)
+          q_push(&L3, p);
         release(&ptable.lock);
         continue;
       }
-
-      q_remove(&L1, p);
-      q_push(&L1, p);
+      if (p->state == RUNNABLE)
+        q_push(&L1, p);
 
       release(&ptable.lock);
       continue;
     }
-
     // L2
     if (q_runnable(&L2))
     {
       p = q_front(&L2);
+      q_pop(&L2);
       if (p->state != RUNNABLE)
       {
-        q_remove(&L2, p);
-        if (p->state == SLEEPING)
-          q_push(&L2, p);
         release(&ptable.lock);
         continue;
       }
-
-      // run
       run_proc(c, p);
-
       if (L2.time_quantum <= p->ticks)
       {
         p->ticks = 0;
-        q_remove(&L2, p);
-        q_push(&L3, p);
+        if (p->state == RUNNABLE)
+          q_push(&L3, p);
         release(&ptable.lock);
         continue;
       }
-
-      q_remove(&L2, p);
-      q_push(&L2, p);
+      if (p->state == RUNNABLE)
+        q_push(&L2, p);
 
       release(&ptable.lock);
       continue;
     }
-
     // L3
     if (q_runnable(&L3))
     {
       p = q_top(&L3);
-      if (p->state != RUNNABLE && p->state != SLEEPING)
+      if (p->state != RUNNABLE)
       {
         q_remove(&L3, p);
         release(&ptable.lock);
         continue;
       }
-
-      // run
       run_proc(c, p);
-
       if (L3.time_quantum <= p->ticks)
       {
         p->ticks = 0;
@@ -535,7 +509,6 @@ scheduler(void)
         release(&ptable.lock);
         continue;
       }
-
       release(&ptable.lock);
       continue;
     }
