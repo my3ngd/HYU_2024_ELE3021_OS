@@ -26,7 +26,7 @@ nxt(int i)
   return (i+1)%SZ;
 }
 
-
+// 큐 초기화
 void
 init_queue(struct proc_queue* q, int queue_level)
 {
@@ -37,14 +37,14 @@ init_queue(struct proc_queue* q, int queue_level)
     q->queue[i] = nullptr;
 }
 
-// is queue empty
+// 큐가 비어 있으면 1, 그렇지 않으면 0 반환
 int
 q_empty(struct proc_queue *q)
 {
   return q->front == q->back;
 }
 
-// is runnable process exist?
+// runnable 상태인 프로세스가 존재하면 1, 그렇지 않으면 0 반환
 int
 q_runnable(struct proc_queue *q)
 {
@@ -55,7 +55,7 @@ q_runnable(struct proc_queue *q)
   return 0;
 }
 
-// queue size
+// 큐의 크기 반환
 int
 q_size(struct proc_queue *q)
 {
@@ -64,7 +64,7 @@ q_size(struct proc_queue *q)
   return q->back - q->front;
 }
 
-// is p exist in q
+// 큐에 프로세스가 있는 지 확인하여 있으면 1, 없으면 0 반환
 int
 q_exist(struct proc_queue *q, struct proc *p)
 {
@@ -74,6 +74,7 @@ q_exist(struct proc_queue *q, struct proc *p)
   return 0;
 }
 
+// 큐의 마지막에 프로세스 추가
 void
 q_push(struct proc_queue *q, struct proc *p)
 {
@@ -85,6 +86,7 @@ q_push(struct proc_queue *q, struct proc *p)
   return ;
 }
 
+// 큐의 가장 앞 프로세스를 제거
 void
 q_pop(struct proc_queue *q)
 {
@@ -92,6 +94,7 @@ q_pop(struct proc_queue *q)
   q->front = nxt(q->front);
 }
 
+// 큐에서 특정 프로세스를 제거; MoQ 혹은 우선순위 큐 구현에 필요
 void
 q_remove(struct proc_queue *q, struct proc *p)
 {
@@ -115,6 +118,7 @@ q_remove(struct proc_queue *q, struct proc *p)
   return ;
 }
 
+// 큐의 가장 앞 원소 반환
 struct proc*
 q_front(struct proc_queue *q)
 {
@@ -123,6 +127,7 @@ q_front(struct proc_queue *q)
   return q->queue[q->front];
 }
 
+// 큐에서 priority가 가장 높은 프로세스 중 첫 번째를 반환
 struct proc*
 q_top(struct proc_queue *q)
 {
@@ -135,14 +140,16 @@ q_top(struct proc_queue *q)
   return res;
 }
 
-// APIs
+// system calls
 
+// 프로세스가 속한 큐의 레벨 반환
 int
 getlev(void)
 {
   return myproc()->queue_level;
 }
 
+// 프로세스의 priority 설정
 int
 setpriority(int pid, int priority)
 {
@@ -164,8 +171,7 @@ setpriority(int pid, int priority)
   return -1;
 }
 
-// system call
-
+// wrapper functions
 int
 sys_getlev(void)
 {

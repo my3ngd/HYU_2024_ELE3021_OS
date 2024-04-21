@@ -383,7 +383,7 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = nullptr;
-  
+
   for(;;)
   {
     sti();

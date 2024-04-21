@@ -51,11 +51,7 @@ trap(struct trapframe *tf)
   case T_IRQ0 + IRQ_TIMER:
     if(cpuid() == 0){
       acquire(&tickslock);
-      if (100 <= ++ticks && !is_monopolized)
-      {
-        priority_boosting();
-        ticks = 0;
-      }
+      ticks++;
       wakeup(&ticks);
       release(&tickslock);
     }
@@ -108,8 +104,22 @@ trap(struct trapframe *tf)
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
   if(myproc() && myproc()->state == RUNNING && tf->trapno == T_IRQ0+IRQ_TIMER && !is_monopolized)
-    if (myproc()->queue_level * 2 + 2 <= ++(myproc()->ticks))
+  {
+    acquire(&tickslock);
+    if (ticks%100 == 99)
+    {
+      release(&tickslock);
       yield();
+      priority_boosting();
+    }
+    else if (myproc()->queue_level * 2 + 2 <= ++(myproc()->ticks))
+    {
+      release(&tickslock);
+      yield();
+    }
+    else
+      release(&tickslock);
+  }
 
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
