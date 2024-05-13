@@ -20,6 +20,13 @@ extern void trapret(void);
 
 static void wakeup1(void *chan);
 
+
+struct proc*
+get_initproc(void)
+{
+  return initproc;
+}
+
 void
 pinit(void)
 {
@@ -153,6 +160,15 @@ userinit(void)
   release(&ptable.lock);
 }
 
+int
+growolwp(int n)
+{
+  uint sz;
+  struct proc *curprc = myproc();
+  // TODO
+  return 0;
+}
+
 // Grow current process's memory by n bytes.
 // Return 0 on success, -1 on failure.
 int
@@ -161,6 +177,8 @@ growproc(int n)
   uint sz;
   struct proc *curproc = myproc();
 
+  if (curproc->is_lwp)
+    return growlwp(n);
   sz = curproc->sz;
   if(n > 0){
     if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
@@ -200,6 +218,9 @@ fork(void)
   np->parent = curproc;
   *np->tf = *curproc->tf;
 
+  // forked from lwp. forked proc is not lwp
+  np->is_lwp = false;
+
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
 
@@ -229,14 +250,56 @@ exit(void)
 {
   struct proc *curproc = myproc();
   struct proc *p;
-  int fd;
 
   if(curproc == initproc)
     panic("init exiting");
 
+  if (curproc->is_lwp)
+  {
+    acquire(&ptable.lock);
+    p = ptable.proc;
+    // set current (lw)process to parent
+    curproc->parent = curproc->parent->parent;
+    for (int old_ppid = curproc->parent->pid; p < &ptable.proc[NPROC]; p++)
+    {
+      // p->pid == old_ppid also? :thinking:
+      if (p->parent != nullptr && p->parent->pid == old_ppid && p->pid != curproc->pid)
+      {
+        p->is_lwp = true;
+        p->parent = curproc;
+      }
+    }
+    // and remove all children
+    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    {
+      if (p->parent != nullptr && p->parent->pid == curproc->pid)
+      {
+        // init process data
+        kfree(p->kstack);  // kstack not shared with others!
+        p->kstack = nullptr;
+        p->parent = nullptr;
+        p->killed = false;
+        p->state = UNUSED;
+        p->is_lwp = false;
+        // and files
+        for (int fd = 0; fd < NOFILE; fd++)
+        {
+          if (p->ofile[fd])
+          {
+            fileclose(p->ofile[fd]);
+            p->ofile[fd] = nullptr;
+          }
+        }
+      }
+    }
+    release(&ptable.lock);
+  }
+
   // Close all open files.
-  for(fd = 0; fd < NOFILE; fd++){
-    if(curproc->ofile[fd]){
+  for (int fd = 0; fd < NOFILE; fd++)
+  {
+    if (curproc->ofile[fd])
+    {
       fileclose(curproc->ofile[fd]);
       curproc->ofile[fd] = 0;
     }
@@ -457,10 +520,8 @@ sleep(void *chan, struct spinlock *lk)
 static void
 wakeup1(void *chan)
 {
-  struct proc *p;
-
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if (p->state == SLEEPING && p->chan == chan)
       p->state = RUNNABLE;
 }
 
@@ -479,21 +540,21 @@ wakeup(void *chan)
 int
 kill(int pid)
 {
-  struct proc *p;
-
+  int killed = false;
   acquire(&ptable.lock);
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->pid == pid){
-      p->killed = 1;
+  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  {
+    // current process & lwps
+    if (p->pid == pid || (p->parent != nullptr && p->parent->pid == pid && p->is_lwp))
+    {
+      killed = p->killed = 1;
       // Wake process from sleep if necessary.
-      if(p->state == SLEEPING)
+      if (p->state == SLEEPING)
         p->state = RUNNABLE;
-      release(&ptable.lock);
-      return 0;
     }
   }
   release(&ptable.lock);
-  return -1;
+  return killed-1;  // return 0 if killed else -1
 }
 
 //PAGEBREAK: 36

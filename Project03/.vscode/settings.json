@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "defs.h": "c",
+        "mmu.h": "c",
+        "types.h": "c"
+    }
+}

@@ -6,6 +6,12 @@
 #include "defs.h"
 #include "x86.h"
 #include "elf.h"
+#include "spinlock.h"
+
+extern struct {
+  struct spinlock lock;
+  struct proc proc[NPROC];
+} ptable;
 
 int
 exec(char *path, char **argv)
@@ -18,6 +24,47 @@ exec(char *path, char **argv)
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
+
+  if (curproc->is_lwp)
+  {
+    acquire(&ptable.lock);
+    struct proc *p = ptable.proc;
+    // set current (lw)process to parent
+    curproc->parent = curproc->parent->parent;
+    for (int old_ppid = curproc->parent->pid; p < &ptable.proc[NPROC]; p++)
+    {
+      // p->pid == old_ppid also? :thinking:
+      if (p->parent != nullptr && p->parent->pid == old_ppid && p->pid != curproc->pid)
+      {
+        p->is_lwp = true;
+        p->parent = curproc;
+      }
+    }
+    // and remove all children
+    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    {
+      if (p->parent != nullptr && p->parent->pid == curproc->pid)
+      {
+        // init process data
+        kfree(p->kstack);  // kstack not shared with others!
+        p->kstack = nullptr;
+        p->parent = nullptr;
+        p->killed = false;
+        p->state = UNUSED;
+        p->is_lwp = false;
+        // and files
+        for (int fd = 0; fd < NOFILE; fd++)
+        {
+          if (p->ofile[fd])
+          {
+            fileclose(p->ofile[fd]);
+            p->ofile[fd] = nullptr;
+          }
+        }
+      }
+    }
+    release(&ptable.lock);
+  }
 
   begin_op();
 
