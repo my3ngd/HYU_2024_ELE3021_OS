@@ -30,6 +30,10 @@ void
 cancel_alloc_lwp(struct proc *lwp)
 {
   lwp->is_lwp = false;
+  lwp->pgdir = nullptr;  // but not kfree (shared)
+  lwp->parent = nullptr;
+  lwp->killed = false;
+  lwp->return_value = nullptr;
   if (lwp->kstack)
   {
     kfree(lwp->kstack);
@@ -46,6 +50,8 @@ cancel_alloc_lwp(struct proc *lwp)
 struct proc*
 alloc_lwp(void)
 {
+  if (!holding(&ptable.lock))
+    panic("alloc_lwp not holding ptable.lock");
   struct proc *cur = myproc(), *p;
   for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if (p->state == UNUSED)
@@ -62,7 +68,7 @@ alloc_lwp(void)
   sp -= sizeof *p->tf;
   p->tf = (struct trapframe*)sp;
 
-  sp -= 4;
+  sp -= sizeof(uint);
   *(uint*)sp = (uint)trapret;
 
   sp -= sizeof *p->context;
@@ -70,49 +76,34 @@ alloc_lwp(void)
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
-  // above: similar with allocproc()
-  // below: for lwp
-
   // share page table
   p->pgdir = cur->pgdir;
-
   // set lwp info
-  p->parent = (cur->is_lwp ? cur : cur->parent);  // what if cur is initproc? :thinking:
-
+  p->parent = (cur->is_lwp ? cur : cur->parent);
   return p;
-}
-
-
-// very similar with exec (sz -> lwp->parent->sz)
-int
-alloc_userstack(struct proc *lwp)
-{
-  // allocate two pages at the next page boundary.
-  // make the first inaccessible. use the second as the user stack.
-  lwp->parent->sz = PGROUNDUP(lwp->parent->sz);
-  if (!(lwp->parent->sz = allocuvm(lwp->pgdir, lwp->parent->sz, lwp->parent->sz + 2*PGSIZE)))
-  {
-    cancel_alloc_lwp(lwp);
-    // unlike "bad" in exec.c, no freevm(pgdir): because pgdir shared.
-    return -1;
-  }
-  clearpteu(lwp->parent->pgdir, (char*)(lwp->parent->sz - 2*PGSIZE));
-  lwp->sz = lwp->parent->sz;
-  return 0;
 }
 
 
 int
 thread_create(thread_t *thread, void *(start_routine)(void*), void *arg)
 {
-  struct proc *cur = myproc(), *lwp;
+  struct proc *cur = myproc(), *lwp;  // WARNING: consider lwp->parent != cur
   acquire(&ptable.lock);
-  if ((lwp = alloc_lwp()) == nullptr || !alloc_userstack(lwp))
+  if ((lwp = alloc_lwp()) == nullptr)
     goto bad;
 
+  // from exec() in exec.c
+  // Allocate two pages at the next page boundary.
+  // Make the first inaccessible.  Use the second as the user stack.
+  lwp->parent->sz = PGROUNDUP(lwp->parent->sz);  // page shared. grow parent's page
+  if (!(lwp->parent->sz = allocuvm(lwp->pgdir, lwp->parent->sz, lwp->parent->sz + 2*PGSIZE)))
+    goto bad;
+  clearpteu(lwp->parent->pgdir, (char*)(lwp->parent->sz - 2*PGSIZE));
+  lwp->sz = lwp->parent->sz;  // sync page size
+
   // parameters (similar with exec(); but one parameter {arg})
-  uint ustack[2] = {0xffffffffU, (uint)arg};  // fake return PC, arg
   uint sp = lwp->sz -  2 * sizeof(uint);  // 2 uint data in stack
+  uint ustack[2] = {0xffffffffU, (uint)arg};  // fake return PC [not used], arg
   if (!copyout(lwp->pgdir, sp, ustack, 2 * sizeof(uint)))
     goto bad;
 
@@ -121,14 +112,13 @@ thread_create(thread_t *thread, void *(start_routine)(void*), void *arg)
   lwp->tf->esp = sp;
   // share process memory size
   for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if (lwp->parent->pid == p->parent->pid)
-      p->sz = lwp->sz;
-  // copy directory
-  lwp->cwd = cur->cwd;
-  // copy fd
+    if (p->is_lwp && lwp->parent->pid == p->parent->pid)
+      p->sz = lwp->sz;  // == lwp->parent->sz;
+  // copy fd and directory
   for (int fd = 0; fd < NOFILE; fd++)
     if (cur->ofile[fd])
       lwp->ofile[fd] = filedup(cur->ofile[fd]);
+  lwp->cwd = cur->cwd;
 
   // lwp metadata
   *thread = lwp->pid;
@@ -156,8 +146,12 @@ thread_exit(void *retval)
   if (curlwp == get_initproc())
     panic("init exiting");
 
-  // set return value
-  curlwp->return_value = retval;
+  begin_op();
+  iput(curlwp->cwd);
+  end_op();
+  curlwp->cwd = nullptr;
+
+  acquire(&ptable.lock);  // must not acquire ptable.lock before begin_op()
 
   // close open files
   for (int fd = 0; fd < NOFILE; fd++)
@@ -169,12 +163,8 @@ thread_exit(void *retval)
     }
   }
 
-  begin_op();
-  iput(curlwp->cwd);
-  end_op();
-  curlwp->cwd = nullptr;
-
-  acquire(&ptable.lock);
+  // set return value
+  curlwp->return_value = retval;
 
   // Parent might be sleeping in wait().
   wakeup_lwp_parent(curlwp->parent);
@@ -210,27 +200,24 @@ thread_join(thread_t thread, void **retval)
     havelwp = false;
     for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     {
-      if (p->parent != curproc)
-        continue;
-      if (p->pid != thread)
+      if (p->parent != curproc || p->pid != thread)
         continue;
       havelwp = true;
       if (p->state == ZOMBIE)
       {
         // Found one.
-        // pid = p->pid;
         kfree(p->kstack);
-        p->kstack = 0;
+        p->kstack = nullptr;
         // freevm(p->pgdir);  // pgdir is shared!!
         p->pgdir = nullptr;   // instead do this.
         p->pid = 0;
-        p->parent = 0;
+        p->parent = nullptr;
         p->name[0] = 0;
-        p->killed = 0;
+        p->killed = false;
         p->state = UNUSED;
-        p->is_lwp = 0;
+        p->is_lwp = false;
         *retval = p->return_value;
-        p->return_value = 0;
+        p->return_value = nullptr;
         release(&ptable.lock);
         return 0;
       }
@@ -244,7 +231,7 @@ thread_join(thread_t thread, void **retval)
     }
 
     // Wait for lwp to exit.
-    sleep(curproc, &ptable.lock);  // release &ptable.lock?
+    sleep(curproc, &ptable.lock);
   }
   return -1;  // not reachable
 }

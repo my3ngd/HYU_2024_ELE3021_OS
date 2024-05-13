@@ -203,27 +203,30 @@ fork(void)
   struct proc *curproc = myproc();
 
   // Allocate process.
-  if((np = allocproc()) == 0){
+  if((np = allocproc()) == 0)
     return -1;
-  }
 
   // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+  // lwp: don't have to consider fork from lwp
+  // same uvm, same sz, same pgdir (all shared)
+  if ((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0)
+  {
     kfree(np->kstack);
-    np->kstack = 0;
+    np->kstack = nullptr;
     np->state = UNUSED;
     return -1;
   }
   np->sz = curproc->sz;
-  np->parent = curproc;
+  np->parent = curproc->is_lwp ? curproc->parent : curproc;  // modified
   *np->tf = *curproc->tf;
 
-  // forked from lwp. forked proc is not lwp
-  np->is_lwp = false;
+  // forked from lwp. forked process is not lwp
+  np->is_lwp = false;  // but may already initialized
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
 
+  // copy fd and directory
   for(i = 0; i < NOFILE; i++)
     if(curproc->ofile[i])
       np->ofile[i] = filedup(curproc->ofile[i]);
@@ -232,11 +235,8 @@ fork(void)
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
 
   pid = np->pid;
-
   acquire(&ptable.lock);
-
   np->state = RUNNABLE;
-
   release(&ptable.lock);
 
   return pid;
@@ -254,6 +254,7 @@ exit(void)
   if(curproc == initproc)
     panic("init exiting");
 
+  // duplicate with exec.c => to function
   if (curproc->is_lwp)
   {
     acquire(&ptable.lock);
@@ -545,7 +546,7 @@ kill(int pid)
   for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
   {
     // current process & lwps
-    if (p->pid == pid || (p->parent != nullptr && p->parent->pid == pid && p->is_lwp))
+    if (p->pid == pid || (p->is_lwp && p->parent != nullptr && p->parent->pid == pid))
     {
       killed = p->killed = 1;
       // Wake process from sleep if necessary.
