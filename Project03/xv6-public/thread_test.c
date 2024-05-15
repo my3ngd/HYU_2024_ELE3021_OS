@@ -142,6 +142,8 @@ int main(int argc, char *argv[])
   }
   printf(1, "Test 1 passed\n\n");
 
+
+
   printf(1, "Test 2: Fork test\n");
   create_all(NUM_THREAD, thread_fork);
   join_all(NUM_THREAD);
@@ -155,6 +157,8 @@ int main(int argc, char *argv[])
     failed();
   }
   printf(1, "Test 2 passed\n\n");
+
+
 
   printf(1, "Test 3: Sbrk test\n");
   create_all(NUM_THREAD, thread_sbrk);

@@ -169,20 +169,22 @@ growproc(int n)
   uint sz;
   struct proc *curproc = myproc();
 
+  acquire(&ptable.lock);  // because size of process are shared
+
   sz = curproc->sz;
-  if (n > 0)
-  {
-    if ((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
-      return -1;
-  }
-  else if (n < 0)
-  {
-    if ((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
-      return -1;
-  }
-  curproc->sz = sz;
+  if (n > 0 && (sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
+    goto bad;
+  if (n < 0 && (sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
+    goto bad;
+  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if (p->pid == curproc->pid)
+      p->sz = sz;
+  release(&ptable.lock);
   switchuvm(curproc);
   return 0;
+bad:
+  release(&ptable.lock);
+  return -1;
 }
 
 // Create a new process copying p as the parent.
@@ -219,22 +221,81 @@ fork(void)
     if (curproc->ofile[i])
       np->ofile[i] = filedup(curproc->ofile[i]);
   np->cwd = idup(curproc->cwd);
-
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
-
   pid = np->pid;
 
   acquire(&ptable.lock);
-
   np->state = RUNNABLE;
-
   release(&ptable.lock);
 
   return pid;
 }
 
-void exit1(struct proc *curproc)
+
+void
+change_origin(struct proc *cur)
 {
+  if (cur->tid == 0)
+    return ;
+  struct proc *ori = cur->origin;
+  if (ori->tid != 0)
+    panic("origin process's tid is not 0");
+  ori->tid = cur->tid;
+  ori->origin = cur;
+  cur->tid = 0;
+  cur->origin = nullptr;
+  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if (p->pid == cur->pid && p->tid != 0)
+      p->origin = cur;
+  return ;
+}
+
+
+void
+clear_lwp(struct proc *cur)
+{
+  acquire(&ptable.lock);
+  change_origin(cur);
+  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  {
+    if (p == cur || p->pid != cur->pid)
+      continue;
+    p->kstack = nullptr;
+    p->pid = p->tid = 0;
+    p->origin = p->parent = nullptr;
+    p->killed = false;
+    p->state = UNUSED;
+    p->sz = 0;
+    for (int fd = 0; fd < NOFILE; fd++)
+      if (p->ofile[fd])
+        p->ofile[fd] = nullptr;
+  }
+  release(&ptable.lock);
+}
+
+// Exit the current process.  Does not return.
+// An exited process remains in the zombie state
+// until its parent calls wait() to find out it exited.
+void
+exit(void)
+{
+  struct proc *curproc = myproc();
+
+  if (curproc == initproc)
+    panic("init exiting");
+
+  clear_lwp(curproc);
+
+  // Close all open files.
+  for (int fd = 0; fd < NOFILE; fd++)
+  {
+    if (curproc->ofile[fd])
+    {
+      fileclose(curproc->ofile[fd]);
+      curproc->ofile[fd] = 0;
+    }
+  }
+
   begin_op();
   iput(curproc->cwd);
   end_op();
@@ -262,64 +323,11 @@ void exit1(struct proc *curproc)
   panic("zombie exit");
 }
 
-// Exit the current process.  Does not return.
-// An exited process remains in the zombie state
-// until its parent calls wait() to find out it exited.
-void
-exit(void)
-{
-  struct proc *curproc = myproc();
-
-  if (curproc == initproc)
-    panic("init exiting");
-
-  if (curproc->tid)
-  {
-    acquire(&ptable.lock);
-    // if lwp, set origin (change with origin)
-    curproc->parent->tid = curproc->tid;
-    curproc->parent->origin = curproc;
-    curproc->tid = 0;
-    curproc->origin = nullptr;
-    for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    {
-      if (p != curproc && p->pid == curproc->pid)
-      {
-        kfree(p->kstack);
-        p->kstack = nullptr;
-        p->pid = p->tid = 0;
-        p->origin = p->parent = nullptr;
-        p->killed = false;
-        p->state = UNUSED;
-        p->sz = 0;
-        for (int fd = 0; fd < NOFILE; fd++)
-          if (p->ofile[fd])
-            p->ofile[fd] = nullptr;
-      }
-    }
-    // and clear all rest of them
-    release(&ptable.lock);
-  }
-
-  // Close all open files.
-  for (int fd = 0; fd < NOFILE; fd++)
-  {
-    if (curproc->ofile[fd])
-    {
-      fileclose(curproc->ofile[fd]);
-      curproc->ofile[fd] = 0;
-    }
-  }
-
-  exit1(curproc);
-}
-
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
 int
 wait(void)
 {
-  struct proc *p;
   int havekids, pid;
   struct proc *curproc = myproc();
   
@@ -328,7 +336,7 @@ wait(void)
   {
     // Scan through table looking for exited children.
     havekids = 0;
-    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     {
       if (p->parent != curproc)
         continue;
@@ -534,23 +542,20 @@ wakeup(void *chan)
 int
 kill(int pid)
 {
-  struct proc *p;
-
   acquire(&ptable.lock);
-  for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  int is_killed = false;
+  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
   {
     if (p->pid == pid)
     {
-      p->killed = 1;
+      is_killed = p->killed = true;
       // Wake process from sleep if necessary.
       if (p->state == SLEEPING)
         p->state = RUNNABLE;
-      release(&ptable.lock);
-      return 0;
     }
   }
   release(&ptable.lock);
-  return -1;
+  return is_killed - 1;
 }
 
 //PAGEBREAK: 36
