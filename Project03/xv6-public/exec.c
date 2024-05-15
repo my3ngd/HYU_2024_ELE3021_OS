@@ -7,6 +7,8 @@
 #include "x86.h"
 #include "elf.h"
 
+extern void thread_clear(int);
+
 int
 exec(char *path, char **argv)
 {
@@ -19,7 +21,7 @@ exec(char *path, char **argv)
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
 
-  clear_lwp(curproc);
+  thread_clear(curproc->pid);
 
   begin_op();
 

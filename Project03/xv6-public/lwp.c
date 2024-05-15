@@ -7,64 +7,68 @@
 #include "proc.h"
 #include "spinlock.h"
 
+
 extern struct {
   struct spinlock lock;
   struct proc proc[NPROC];
 } ptable;
 
-extern int nextpid;
-extern int nexttid;
-extern struct proc* get_initproc(void);
+extern struct proc* get_initproc();
 extern void forkret(void);
 extern void trapret(void);
+
+static int thread_id = 0;
+
+// copy of wakeup1 in proc.c
+static void
+wakeup2(void *chan)
+{
+  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if (p->state == SLEEPING && p->chan == chan)
+      p->state = RUNNABLE;
+  return ;
+}
+
 
 void
 cancel_create(struct proc *p)
 {
-  p->pid = p->tid = 0;
-  p->parent = p->origin = nullptr;
-  p->killed = false;
-  p->pgdir = nullptr;
-  p->state = UNUSED;
-  if (p->kstack != nullptr)
+  if (p->kstack)
     kfree(p->kstack);
   p->kstack = nullptr;
+  p->pid = p->tid = 0;
+  p->is_lwp = false;
+  p->parent = p->origin = nullptr;
+  p->name[0] = 0;
+  p->killed = false;
+  p->state = UNUSED;
+  p->pgdir = nullptr;
   p->retval = nullptr;
   return ;
 }
 
-static void
-wakeup2(void *chan)
-{
-  struct proc *p;
-
-  for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if (p->state == SLEEPING && p->chan == chan)
-      p->state = RUNNABLE;
-}
 
 struct proc*
-alloclwp()
+alloc_thread(void)
 {
   struct proc* curproc = myproc();
   struct proc* p = nullptr;
 
   for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if (p->state == UNUSED)
-      break;
-  if (p == &ptable.proc[NPROC])
-    return nullptr;
-  p->tid = nextpid++;
+      goto found;
+  return nullptr;
+
+found:
+  p->tid = thread_id++;
+  p->is_lwp = true;
   p->pid = myproc()->pid;
   p->state = EMBRYO;
   p->parent = curproc;
-  p->origin = (curproc->tid ? curproc->origin : curproc);
+  p->origin = (curproc->is_lwp ? curproc->origin : curproc);
   p->pgdir = curproc->pgdir;
-  p->retval = nullptr;
 
-  // copy of allocproc()
-  // kstack
-  if ((p->kstack = kalloc()) == nullptr)
+  if ((p->kstack = kalloc()) == 0)
   {
     cancel_create(p);
     return nullptr;
@@ -81,22 +85,34 @@ alloclwp()
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
-
   return p;
 }
 
+int
+alloc_ustack(struct proc* lwp)
+{
+  struct proc *ori = lwp->origin;
+  ori->sz = PGROUNDUP(ori->sz);
+  if ((ori->sz = allocuvm(ori->pgdir, ori->sz, ori->sz + 2*PGSIZE)))
+  {
+    clearpteu(ori->pgdir, (char*)(ori->sz - 2*PGSIZE));
+    lwp->sz = ori->sz;
+    return 0;
+  }
+  cancel_create(lwp);
+  return -1;
+}
 
-int thread_create(thread_t *thread, void *(*start_routine)(void*), void *arg)
+int
+thread_create(thread_t* thread, void* (*start_routine)(void *), void *arg)
 {
   struct proc* curproc = myproc();
   struct proc* lwp;
 
   acquire(&ptable.lock);
-  // kernel stack
-  if ((lwp = alloclwp()) == nullptr)
+  if ((lwp = alloc_thread()) == 0)
     goto bad;
-  // user stack
-
+  
   struct proc *ori = lwp->origin;
   ori->sz = PGROUNDUP(ori->sz);
   if ((ori->sz = allocuvm(ori->pgdir, ori->sz, ori->sz + 2*PGSIZE)) == 0)
@@ -104,30 +120,24 @@ int thread_create(thread_t *thread, void *(*start_routine)(void*), void *arg)
   clearpteu(ori->pgdir, (char*)(ori->sz - 2*PGSIZE));
   lwp->sz = ori->sz;
 
-  // function info
   uint sp = lwp->sz - 2*sizeof(uint);
-  uint ustack[2] = {0xFFFFFFFF, (uint)arg};
-  if (copyout(lwp->pgdir, sp, ustack, 2 * sizeof(uint)) < 0)
+  uint st_val[2] = {0xFFFFFFFFU, (uint)arg};
+  if (copyout(lwp->pgdir, sp, st_val, 2 * sizeof(uint)) < 0)
     goto bad;
+  release(&ptable.lock);
+
+  for (int fd = 0; fd < NOFILE; fd++)
+    if (curproc->ofile[fd])
+      lwp->ofile[fd] = filedup(curproc->ofile[fd]);
+  lwp->cwd = idup(curproc->cwd);
+
+  acquire(&ptable.lock);
   lwp->tf->eip = (uint)start_routine;
   lwp->tf->esp = sp;
 
-  // share mem sz
   for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if (p->pid == lwp->pid) 
       p->sz = lwp->sz;
-  release(&ptable.lock);
-
-  // copy fd
-  for (int i = 0; i < NOFILE; i++)
-    if (curproc->ofile[i])
-      lwp->ofile[i] = filedup(curproc->ofile[i]);
-  lwp->cwd = idup(curproc->cwd);
-
-  // thread name
-  safestrcpy(lwp->name, curproc->name, sizeof(curproc->name));
-
-  acquire(&ptable.lock);
   *thread = lwp->tid;
   lwp->state = RUNNABLE;
   release(&ptable.lock);
@@ -141,24 +151,24 @@ bad:
 
 
 void
-thread_exit(void *retval)
+thread_exit(void* retval)
 {
-  struct proc *lwp = myproc();
-  if (lwp->tid == 0)
-    panic("thread_exit: non lwp exit");
-  
-  // remove fds
+  struct proc* lwp = myproc();
+  if (lwp->is_lwp == 0)
+    panic("thread_exit - not lwp\n");
+  // if initproc, it may not lwp
+
   for (int fd = 0; fd < NOFILE; fd++)
     if (lwp->ofile[fd])
-      lwp->ofile[fd] = nullptr;
-      // but no fileclose(): other thread may use
-  
-  // remove dir
+      lwp->ofile[fd] = 0;
+
   begin_op();
   iput(lwp->cwd);
   end_op();
-  lwp->cwd = nullptr;
-
+  lwp->cwd = 0;
+  lwp->retval = retval;
+  lwp->state = ZOMBIE;
+  
   acquire(&ptable.lock);
   wakeup2(lwp->parent);
   for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
@@ -170,44 +180,42 @@ thread_exit(void *retval)
         wakeup2(get_initproc());
     }
   }
-  lwp->state = ZOMBIE;
-  lwp->retval = retval;
   sched();
   panic("zombie exit");
-  return ;
 }
 
 
-int
-thread_join(thread_t thread, void **retval)
-{
-  struct proc *curproc = myproc();
+int 
+thread_join(thread_t thread, void** retval)
+{  
   acquire(&ptable.lock);
-  for (;;)
+  for (struct proc *lwp = myproc();;)
   {
     for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     {
-      if (p->tid != thread || p->state != ZOMBIE)
+      if (p->tid != thread)
         continue;
-      if (p->kstack)
-        kfree(p->kstack);
-      p->kstack = nullptr;
-      p->pid = p->tid = 0;
-      p->parent = p->origin = nullptr;
-      p->killed = false;
-      p->state = UNUSED;
-      *retval = p->retval;
-      p->retval = nullptr;
-      release(&ptable.lock);
-      return 0;
+      if (p->state == ZOMBIE)
+      {
+        *retval = p->retval;
+        p->retval = nullptr;
+        p->is_lwp = false;
+        if (p->kstack)  // true
+          kfree(p->kstack);
+        p->kstack = nullptr;
+        p->pid = p->tid = 0;
+        p->parent = p->origin = nullptr;
+        p->name[0] = 0;
+        p->killed = false;
+        p->state = UNUSED;
+        release(&ptable.lock);
+        return 0;
+      }
     }
-    sleep(curproc, &ptable.lock);
+    sleep(lwp, &ptable.lock);
   }
-  return 0;  // not reachable
+  return -1;
 }
-
-
-
 
 
 // System call wrapper functions

@@ -22,10 +22,7 @@ extern void trapret(void);
 static void wakeup1(void *chan);
 
 struct proc*
-get_initproc(void)
-{
-  return initproc;
-}
+get_initproc(void) {return initproc; }
 
 void
 pinit(void)
@@ -35,9 +32,7 @@ pinit(void)
 
 // Must be called with interrupts disabled
 int
-cpuid() {
-  return mycpu()-cpus;
-}
+cpuid() { return mycpu()-cpus; }
 
 // Must be called with interrupts disabled to avoid the caller being
 // rescheduled between reading lapicid and running through the loop.
@@ -52,17 +47,17 @@ mycpu(void)
   apicid = lapicid();
   // APIC IDs are not guaranteed to be contiguous. Maybe we should have
   // a reverse map, or reserve a register to store &cpus[i].
-  for (i = 0; i < ncpu; ++i) {
+  for (i = 0; i < ncpu; ++i)
     if (cpus[i].apicid == apicid)
       return &cpus[i];
-  }
   panic("unknown apicid\n");
 }
 
 // Disable interrupts so that we are not rescheduled
 // while reading proc from the cpu structure
 struct proc*
-myproc(void) {
+myproc(void)
+{
   struct cpu *c;
   struct proc *p;
   pushcli();
@@ -155,9 +150,7 @@ userinit(void)
   // writes to be visible, and the lock is also needed
   // because the assignment might not be atomic.
   acquire(&ptable.lock);
-
   p->state = RUNNABLE;
-
   release(&ptable.lock);
 }
 
@@ -166,25 +159,76 @@ userinit(void)
 int
 growproc(int n)
 {
-  uint sz;
   struct proc *curproc = myproc();
 
-  acquire(&ptable.lock);  // because size of process are shared
+  acquire(&ptable.lock);   // because of access sz (sz shared: critical)
+  uint sz = (curproc->is_lwp ? curproc->origin->sz : curproc->sz);
 
-  sz = curproc->sz;
-  if (n > 0 && (sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
-    goto bad;
-  if (n < 0 && (sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
-    goto bad;
+  if (n > 0 && (sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)    goto bad;
+  if (n < 0 && (sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)  goto bad;
+
   for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if (p->pid == curproc->pid)
       p->sz = sz;
+  // share size
+  if (curproc->is_lwp)
+  {
+    curproc->origin->sz = sz;
+    for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+      if (p->pid == curproc->pid) 
+        p->sz = curproc->origin->sz;
+  }
+  else  curproc->sz = sz;
+
   release(&ptable.lock);
   switchuvm(curproc);
   return 0;
 bad:
   release(&ptable.lock);
   return -1;
+}
+
+void swap_origin(struct proc* curproc)
+{
+  if (curproc->is_lwp == 0)
+    return;
+  curproc->parent = curproc->origin->parent;
+  curproc->origin = 0;
+  curproc->is_lwp = 0;
+  for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p)
+    if (p != curproc && p->pid == curproc->pid)
+      p->origin = curproc;
+  return ;
+}
+
+void thread_clear(int pid)
+{
+  struct proc* curproc = myproc();
+
+  acquire(&ptable.lock);
+  swap_origin(curproc);
+  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; ++p)
+  {
+    if (p->pid == pid && p != curproc)
+    {
+      if (p->kstack)
+        kfree(p->kstack);
+      p->kstack = 0;
+      p->pid = 0;
+      p->parent = 0;
+      p->name[0] = 0;
+      p->killed = 0;
+      p->state = UNUSED;
+      p->origin = 0;
+      p->is_lwp = 0;
+      p->tid = 0;
+
+      for (int fd = 0; fd < NOFILE; fd++)
+        if (p->ofile[fd])
+          p->ofile[fd] = 0;
+    }
+  }
+  release(&ptable.lock);
 }
 
 // Create a new process copying p as the parent.
@@ -212,7 +256,8 @@ fork(void)
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
-  np->tid = 0;  // forked: not lwp
+  np->is_lwp = 0;
+  np->tid = 0;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -223,54 +268,11 @@ fork(void)
   np->cwd = idup(curproc->cwd);
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
   pid = np->pid;
-
   acquire(&ptable.lock);
   np->state = RUNNABLE;
   release(&ptable.lock);
 
   return pid;
-}
-
-
-void
-change_origin(struct proc *cur)
-{
-  if (cur->tid == 0)
-    return ;
-  struct proc *ori = cur->origin;
-  if (ori->tid != 0)
-    panic("origin process's tid is not 0");
-  ori->tid = cur->tid;
-  ori->origin = cur;
-  cur->tid = 0;
-  cur->origin = nullptr;
-  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if (p->pid == cur->pid && p->tid != 0)
-      p->origin = cur;
-  return ;
-}
-
-
-void
-clear_lwp(struct proc *cur)
-{
-  acquire(&ptable.lock);
-  change_origin(cur);
-  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-  {
-    if (p == cur || p->pid != cur->pid)
-      continue;
-    p->kstack = nullptr;
-    p->pid = p->tid = 0;
-    p->origin = p->parent = nullptr;
-    p->killed = false;
-    p->state = UNUSED;
-    p->sz = 0;
-    for (int fd = 0; fd < NOFILE; fd++)
-      if (p->ofile[fd])
-        p->ofile[fd] = nullptr;
-  }
-  release(&ptable.lock);
 }
 
 // Exit the current process.  Does not return.
@@ -284,7 +286,7 @@ exit(void)
   if (curproc == initproc)
     panic("init exiting");
 
-  clear_lwp(curproc);
+  thread_clear(curproc->pid);
 
   // Close all open files.
   for (int fd = 0; fd < NOFILE; fd++)
@@ -328,28 +330,31 @@ exit(void)
 int
 wait(void)
 {
-  int havekids, pid;
+  int pid = 0;
   struct proc *curproc = myproc();
   
   acquire(&ptable.lock);
-  for (;;)
+  for (int flag = 0;; flag = 0)
   {
     // Scan through table looking for exited children.
-    havekids = 0;
+    flag = 0;
     for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     {
       if (p->parent != curproc)
         continue;
-      havekids = 1;
+      flag = 1;
       if (p->state == ZOMBIE)
       {
         // Found one.
         pid = p->pid;
-        kfree(p->kstack);
+        if (p->kstack)
+          kfree(p->kstack);
         p->kstack = 0;
-        freevm(p->pgdir);
+        if (!p->is_lwp)
+          freevm(p->pgdir);
         p->pid = 0;
         p->parent = 0;
+        p->origin = 0;
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
@@ -359,7 +364,7 @@ wait(void)
     }
 
     // No point waiting if we don't have any children.
-    if (!havekids || curproc->killed)
+    if (!flag || curproc->killed)
     {
       release(&ptable.lock);
       return -1;
@@ -461,7 +466,8 @@ forkret(void)
   // Still holding ptable.lock from scheduler.
   release(&ptable.lock);
 
-  if (first) {
+  if (first)
+  {
     // Some initialization functions must be run in the context
     // of a regular process (e.g., they call sleep), and thus cannot
     // be run from main().
