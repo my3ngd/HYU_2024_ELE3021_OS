@@ -188,7 +188,8 @@ bad:
   return -1;
 }
 
-void swap_origin(struct proc* curproc)
+void
+swap_origin(struct proc* curproc)
 {
   if (curproc->is_lwp == 0)
     return;
@@ -201,7 +202,26 @@ void swap_origin(struct proc* curproc)
   return ;
 }
 
-void thread_clear(int pid)
+// no freevm(pgdir), no fileclose
+void
+init_proc(struct proc *p)
+{
+  if (p->kstack)
+    kfree(p->kstack);
+  p->kstack = nullptr;
+  p->pid = p->tid = 0;;
+  p->parent = p->origin = nullptr;
+  p->name[0] = 0;
+  p->killed = false;
+  p->state = UNUSED;
+  p->is_lwp = false;
+  p->pgdir = nullptr;
+  p->retval = nullptr;
+  return ;
+}
+
+void
+thread_removeall(int pid)
 {
   struct proc* curproc = myproc();
 
@@ -211,18 +231,7 @@ void thread_clear(int pid)
   {
     if (p->pid == pid && p != curproc)
     {
-      if (p->kstack)
-        kfree(p->kstack);
-      p->kstack = 0;
-      p->pid = 0;
-      p->parent = 0;
-      p->name[0] = 0;
-      p->killed = 0;
-      p->state = UNUSED;
-      p->origin = 0;
-      p->is_lwp = 0;
-      p->tid = 0;
-
+      init_proc(p);
       for (int fd = 0; fd < NOFILE; fd++)
         if (p->ofile[fd])
           p->ofile[fd] = 0;
@@ -285,9 +294,7 @@ exit(void)
 
   if (curproc == initproc)
     panic("init exiting");
-
-  thread_clear(curproc->pid);
-
+  thread_removeall(curproc->pid);
   // Close all open files.
   for (int fd = 0; fd < NOFILE; fd++)
   {
@@ -334,37 +341,29 @@ wait(void)
   struct proc *curproc = myproc();
   
   acquire(&ptable.lock);
-  for (int flag = 0;; flag = 0)
+  for (int fail = true;; fail = true)
   {
     // Scan through table looking for exited children.
-    flag = 0;
+    fail = true;
     for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     {
       if (p->parent != curproc)
         continue;
-      flag = 1;
+      fail = false;
       if (p->state == ZOMBIE)
       {
         // Found one.
         pid = p->pid;
-        if (p->kstack)
-          kfree(p->kstack);
-        p->kstack = 0;
         if (!p->is_lwp)
           freevm(p->pgdir);
-        p->pid = 0;
-        p->parent = 0;
-        p->origin = 0;
-        p->name[0] = 0;
-        p->killed = 0;
-        p->state = UNUSED;
+        init_proc(p);
         release(&ptable.lock);
         return pid;
       }
     }
 
     // No point waiting if we don't have any children.
-    if (!flag || curproc->killed)
+    if (curproc->killed || fail)
     {
       release(&ptable.lock);
       return -1;
@@ -526,11 +525,10 @@ sleep(void *chan, struct spinlock *lk)
 static void
 wakeup1(void *chan)
 {
-  struct proc *p;
-
-  for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if (p->state == SLEEPING && p->chan == chan)
       p->state = RUNNABLE;
+  return ;
 }
 
 // Wake up all processes sleeping on chan.

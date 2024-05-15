@@ -69,7 +69,7 @@ void rn_test1() {
     rn_test_fail();
   }
 
-  printf(1, "rn_test1 Passed\n\n");
+  printf(1, "\t\t[rn_test1 Passed]\n\n");
   exit();
 }
 
@@ -117,7 +117,7 @@ void rn_test2() {
     rn_test_fail();
   }
   
-  printf(1, "rn_test2 Passed\n\n");
+  printf(1, "\t\t[rn_test2 Passed]\n\n");
   exit();
 }
 
@@ -163,7 +163,7 @@ void rn_test3() {
   create_all(0, NUM_THREAD, rn_test3_thread);
   join_all(0, NUM_THREAD);
 
-  printf(1, "rn_test3 Passed\n\n");
+  printf(1, "\t\t[rn_test3 Passed]\n\n");
   exit();
 }
 
@@ -223,7 +223,7 @@ void rn_test4() {
       rn_test_fail();
     }
 
-    printf(1, "rn_test4 Passed\n\n");
+    printf(1, "\t\t[rn_test4 Passed]\n\n");
     exit();
   }
 }
@@ -255,7 +255,7 @@ void rn_test5() {
     for (; wait() != pid; ) printf(1, "%d\n", __LINE__);
   }
 
-  printf(1, "rn_test5 Passed\n\n");
+  printf(1, "\t\t[rn_test5 Passed]\n\n");
   exit();
 }
 
@@ -290,7 +290,7 @@ void rn_test6() {
     for (; wait() != pid; );
   }
 
-  printf(1, "rn_test6 Passed\n\n");
+  printf(1, "\t\t[rn_test6 Passed]\n\n");
   exit();
 }
 int main(int argc, char *argv[])

@@ -16,6 +16,7 @@ extern struct {
 extern struct proc* get_initproc();
 extern void forkret(void);
 extern void trapret(void);
+extern void init_proc(struct proc*);
 
 static int thread_id = 0;
 
@@ -26,24 +27,6 @@ wakeup2(void *chan)
   for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if (p->state == SLEEPING && p->chan == chan)
       p->state = RUNNABLE;
-  return ;
-}
-
-
-void
-cancel_create(struct proc *p)
-{
-  if (p->kstack)
-    kfree(p->kstack);
-  p->kstack = nullptr;
-  p->pid = p->tid = 0;
-  p->is_lwp = false;
-  p->parent = p->origin = nullptr;
-  p->name[0] = 0;
-  p->killed = false;
-  p->state = UNUSED;
-  p->pgdir = nullptr;
-  p->retval = nullptr;
   return ;
 }
 
@@ -70,7 +53,7 @@ found:
 
   if ((p->kstack = kalloc()) == 0)
   {
-    cancel_create(p);
+    init_proc(p);
     return nullptr;
   }
 
@@ -99,7 +82,7 @@ alloc_ustack(struct proc* lwp)
     lwp->sz = ori->sz;
     return 0;
   }
-  cancel_create(lwp);
+  init_proc(lwp);
   return -1;
 }
 
@@ -144,7 +127,7 @@ thread_create(thread_t* thread, void* (*start_routine)(void *), void *arg)
   return 0;
 
 bad:
-  cancel_create(lwp);
+  init_proc(lwp);
   release(&ptable.lock);
   return -1;
 }
