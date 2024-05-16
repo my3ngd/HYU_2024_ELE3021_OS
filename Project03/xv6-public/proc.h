@@ -51,7 +51,6 @@ struct proc {
   char name[16];                // Process name (debugging)
 
   // for lwp
-  int is_lwp;                   // name is meaning (0 or 1)
   int tid;                      // lwp ID (0 if 'origin')
   struct proc *origin;          // origin process
   void *retval;                 // return value for 'thread_exit'
