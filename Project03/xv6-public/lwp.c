@@ -122,7 +122,6 @@ thread_create(thread_t* thread, void* (*start_routine)(void *), void *arg)
       p->sz = lwp->sz;
   *thread = lwp->tid;
   lwp->state = RUNNABLE;
-  cprintf("pid: %d, tid: %d\n", lwp->pid, lwp->tid);
   release(&ptable.lock);
   return 0;
 
@@ -138,10 +137,7 @@ thread_exit(void* retval)
 {
   struct proc* lwp = myproc();
   if (lwp->tid == 0)
-  {
-    cprintf("pid: %d, tid: %d\n", lwp->pid, lwp->tid);
     panic("thread_exit - not lwp\n");
-  }
   // if initproc, it may not lwp
 
   for (int fd = 0; fd < NOFILE; fd++)
