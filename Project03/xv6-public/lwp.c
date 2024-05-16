@@ -18,7 +18,7 @@ extern void forkret(void);
 extern void trapret(void);
 extern void init_proc(struct proc*);
 
-static int thread_id = 0;
+extern int nexttid;
 
 // copy of wakeup1 in proc.c
 static void
@@ -43,12 +43,11 @@ alloc_thread(void)
   return nullptr;
 
 found:
-  p->tid = thread_id++;
-  p->is_lwp = true;
+  p->tid = nexttid++;
   p->pid = myproc()->pid;
   p->state = EMBRYO;
   p->parent = curproc;
-  p->origin = (curproc->is_lwp ? curproc->origin : curproc);
+  p->origin = (curproc->tid ? curproc->origin : curproc);
   p->pgdir = curproc->pgdir;
 
   if ((p->kstack = kalloc()) == 0)
@@ -137,7 +136,7 @@ void
 thread_exit(void* retval)
 {
   struct proc* lwp = myproc();
-  if (lwp->is_lwp == 0)
+  if (lwp->tid == 0)
     panic("thread_exit - not lwp\n");
   // if initproc, it may not lwp
 
@@ -182,7 +181,6 @@ thread_join(thread_t thread, void** retval)
       {
         *retval = p->retval;
         p->retval = nullptr;
-        p->is_lwp = false;
         if (p->kstack)  // true
           kfree(p->kstack);
         p->kstack = nullptr;

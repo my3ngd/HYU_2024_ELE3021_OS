@@ -162,7 +162,7 @@ growproc(int n)
   struct proc *curproc = myproc();
 
   acquire(&ptable.lock);   // because of access sz (sz shared: critical)
-  uint sz = (curproc->is_lwp ? curproc->origin->sz : curproc->sz);
+  uint sz = (curproc->tid ? curproc->origin->sz : curproc->sz);
 
   if (n > 0 && (sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)    goto bad;
   if (n < 0 && (sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)  goto bad;
@@ -171,7 +171,7 @@ growproc(int n)
     if (p->pid == curproc->pid)
       p->sz = sz;
   // share size
-  if (curproc->is_lwp)
+  if (curproc->tid)
   {
     curproc->origin->sz = sz;
     for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; p++)
@@ -191,14 +191,14 @@ bad:
 void
 swap_origin(struct proc* curproc)
 {
-  if (curproc->is_lwp == 0)
+  if (curproc->tid == 0)
     return;
   curproc->parent = curproc->origin->parent;
   curproc->origin = 0;
-  curproc->is_lwp = 0;
   for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p)
     if (p != curproc && p->pid == curproc->pid)
       p->origin = curproc;
+  curproc->tid = 0;
   return ;
 }
 
@@ -214,7 +214,6 @@ init_proc(struct proc *p)
   p->name[0] = 0;
   p->killed = false;
   p->state = UNUSED;
-  p->is_lwp = false;
   p->pgdir = nullptr;
   p->retval = nullptr;
   return ;
@@ -265,7 +264,6 @@ fork(void)
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
-  np->is_lwp = 0;
   np->tid = 0;
 
   // Clear %eax so that fork returns 0 in the child.
@@ -354,7 +352,7 @@ wait(void)
       {
         // Found one.
         pid = p->pid;
-        if (!p->is_lwp)
+        if (!p->tid)
           freevm(p->pgdir);
         init_proc(p);
         release(&ptable.lock);
