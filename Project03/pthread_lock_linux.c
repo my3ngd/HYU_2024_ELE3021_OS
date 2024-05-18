@@ -5,27 +5,34 @@
 
 int shared_resource = 0;
 
-#define NUM_ITERS 10
-#define NUM_THREADS 10
-#define NUM_DUMMY_ITER 10000
+#define NUM_ITERS 100
+#define NUM_THREADS 100
+#define NUM_DUMMY_ITER 1000
 
 void lock(int tid);
 void unlock(int tid);
 
-int turn;
-int flag[NUM_THREADS];
+// test and set
+int flag;
 
 void lock(int tid)
 {
-    int other = NUM_THREADS - tid - 1;
-    flag[tid] = true;
-    turn = tid;
-    while (turn == tid && flag[other] == true);
+    __asm__(
+        "mylock: movl $1, %%eax;"   // assign 1 to eax
+        "xchg %%eax, %0;"           // "atomic swap" %eax and [flag: mapped]
+        "test %%eax, %%eax;"        // set ZF 1 if %eax not zero
+        "jnz mylock;"               // jump to [mylock] if not ZF
+        : "+m" (flag)               // output
+        :                           // input
+        : "%eax"                    // used register list
+    );
+    // printf("%d lock\n", tid);    // print lock statement
 }
 
 void unlock(int tid)
 {
-    flag[tid] = false;
+    // printf("%d unlock\n", tid);  // print lock statement
+    flag = false;
 }
 
 int update_shared_resource(int before)

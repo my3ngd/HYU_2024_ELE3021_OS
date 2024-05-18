@@ -19,7 +19,7 @@ int nexttid = 1;
 extern void forkret(void);
 extern void trapret(void);
 
-static void wakeup1(void *chan);
+void wakeup1(void *chan);
 
 struct proc*
 get_initproc(void) {return initproc; }
@@ -159,12 +159,12 @@ userinit(void)
 int
 growproc(int n)
 {
+  acquire(&ptable.lock);   // because of access sz (sz shared: critical)
   struct proc *curproc = myproc();
 
-  acquire(&ptable.lock);   // because of access sz (sz shared: critical)
   uint sz = (curproc->tid ? curproc->origin->sz : curproc->sz);
 
-  if (n > 0 && (sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)    goto bad;
+  if (n > 0 && (sz =   allocuvm(curproc->pgdir, sz, sz + n)) == 0)  goto bad;
   if (n < 0 && (sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)  goto bad;
 
   for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
@@ -194,7 +194,7 @@ swap_origin(struct proc* curproc)
   if (curproc->tid == 0)
     return;
   curproc->parent = curproc->origin->parent;
-  curproc->origin = 0;
+  curproc->origin = nullptr;
   for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; ++p)
     if (p != curproc && p->pid == curproc->pid)
       p->origin = curproc;
@@ -209,7 +209,7 @@ init_proc(struct proc *p)
   if (p->kstack)
     kfree(p->kstack);
   p->kstack = nullptr;
-  p->pid = p->tid = 0;;
+  p->pid = p->tid = 0;
   p->parent = p->origin = nullptr;
   p->name[0] = 0;
   p->killed = false;
@@ -233,7 +233,7 @@ thread_removeall(int pid)
       init_proc(p);
       for (int fd = 0; fd < NOFILE; fd++)
         if (p->ofile[fd])
-          p->ofile[fd] = 0;
+          p->ofile[fd] = nullptr;
     }
   }
   release(&ptable.lock);
@@ -257,7 +257,7 @@ fork(void)
   if ((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0)
   {
     kfree(np->kstack);
-    np->kstack = 0;
+    np->kstack = nullptr;
     np->state = UNUSED;
     return -1;
   }
@@ -299,14 +299,14 @@ exit(void)
     if (curproc->ofile[fd])
     {
       fileclose(curproc->ofile[fd]);
-      curproc->ofile[fd] = 0;
+      curproc->ofile[fd] = nullptr;
     }
   }
 
   begin_op();
   iput(curproc->cwd);
   end_op();
-  curproc->cwd = 0;
+  curproc->cwd = nullptr;
 
   acquire(&ptable.lock);
 
@@ -520,7 +520,7 @@ sleep(void *chan, struct spinlock *lk)
 //PAGEBREAK!
 // Wake up all processes sleeping on chan.
 // The ptable lock must be held.
-static void
+void
 wakeup1(void *chan)
 {
   for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)

@@ -17,22 +17,12 @@ extern struct proc* get_initproc();
 extern void forkret(void);
 extern void trapret(void);
 extern void init_proc(struct proc*);
+extern void wakeup1(void*);
 
 extern int nexttid;
 
-// copy of wakeup1 in proc.c
-static void
-wakeup2(void *chan)
-{
-  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if (p->state == SLEEPING && p->chan == chan)
-      p->state = RUNNABLE;
-  return ;
-}
-
-
 struct proc*
-alloc_thread(void)
+alloclwp(void)
 {
   struct proc* curproc = myproc();
   struct proc* p = nullptr;
@@ -70,20 +60,6 @@ found:
   return p;
 }
 
-int
-alloc_ustack(struct proc* lwp)
-{
-  struct proc *ori = lwp->origin;
-  ori->sz = PGROUNDUP(ori->sz);
-  if ((ori->sz = allocuvm(ori->pgdir, ori->sz, ori->sz + 2*PGSIZE)))
-  {
-    clearpteu(ori->pgdir, (char*)(ori->sz - 2*PGSIZE));
-    lwp->sz = ori->sz;
-    return 0;
-  }
-  init_proc(lwp);
-  return -1;
-}
 
 int
 thread_create(thread_t* thread, void* (*start_routine)(void *), void *arg)
@@ -92,7 +68,7 @@ thread_create(thread_t* thread, void* (*start_routine)(void *), void *arg)
   struct proc* lwp;
 
   acquire(&ptable.lock);
-  if ((lwp = alloc_thread()) == 0)
+  if ((lwp = alloclwp()) == 0)
     goto bad;
   
   struct proc *ori = lwp->origin;
@@ -101,6 +77,9 @@ thread_create(thread_t* thread, void* (*start_routine)(void *), void *arg)
     goto bad;
   clearpteu(ori->pgdir, (char*)(ori->sz - 2*PGSIZE));
   lwp->sz = ori->sz;
+  for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if (p->pid == lwp->pid) 
+      p->sz = lwp->sz;
 
   uint sp = lwp->sz - 2*sizeof(uint);
   uint st_val[2] = {0xFFFFFFFFU, (uint)arg};
@@ -116,10 +95,6 @@ thread_create(thread_t* thread, void* (*start_routine)(void *), void *arg)
   acquire(&ptable.lock);
   lwp->tf->eip = (uint)start_routine;
   lwp->tf->esp = sp;
-
-  for (struct proc* p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if (p->pid == lwp->pid) 
-      p->sz = lwp->sz;
   *thread = lwp->tid;
   lwp->state = RUNNABLE;
   release(&ptable.lock);
@@ -142,7 +117,7 @@ thread_exit(void* retval)
 
   for (int fd = 0; fd < NOFILE; fd++)
     if (lwp->ofile[fd])
-      lwp->ofile[fd] = 0;
+      lwp->ofile[fd] = nullptr;
 
   begin_op();
   iput(lwp->cwd);
@@ -152,14 +127,14 @@ thread_exit(void* retval)
   lwp->state = ZOMBIE;
   
   acquire(&ptable.lock);
-  wakeup2(lwp->parent);
+  wakeup1(lwp->parent);
   for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++)
   {
     if (p->parent == lwp)
     {
       p->parent = get_initproc();
       if (p->state == ZOMBIE)
-        wakeup2(get_initproc());
+        wakeup1(get_initproc());
     }
   }
   sched();
@@ -180,15 +155,7 @@ thread_join(thread_t thread, void** retval)
       if (p->state == ZOMBIE)
       {
         *retval = p->retval;
-        p->retval = nullptr;
-        if (p->kstack)  // true
-          kfree(p->kstack);
-        p->kstack = nullptr;
-        p->pid = p->tid = 0;
-        p->parent = p->origin = nullptr;
-        p->name[0] = 0;
-        p->killed = false;
-        p->state = UNUSED;
+        init_proc(p);
         release(&ptable.lock);
         return 0;
       }
