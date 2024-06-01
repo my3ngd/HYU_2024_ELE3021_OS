@@ -25,6 +25,44 @@ struct {
   uint pgrefc[PHYSTOP/PGSIZE];
 } kmem;
 
+
+void
+__incr_refc(uint pa)
+{
+  kmem.pgrefc[pa/PGSIZE]++;
+}
+
+void
+__decr_refc(uint pa)
+{
+  kmem.pgrefc[pa/PGSIZE]--;
+}
+
+uint
+__get_refc(uint pa)
+{
+  uint res;
+  res = kmem.pgrefc[pa/PGSIZE];
+  if (res < 0)
+    panic("negative refc");
+  return res;
+}
+
+void
+incr_refc(uint pa)
+{
+  acquire(&kmem.lock);
+  __incr_refc(pa);
+  release(&kmem.lock);
+}
+
+void
+decr_refc(uint pa)
+{
+  acquire(&kmem.lock);
+  __decr_refc(pa);
+  release(&kmem.lock);
+}
 // Initialization happens in two phases.
 // 1. main() calls kinit1() while still using entrypgdir to place just
 // the pages mapped by entrypgdir on free list.
@@ -69,15 +107,21 @@ kfree(char *v)
   if((uint)v % PGSIZE || v < end || V2P(v) >= PHYSTOP)
     panic("kfree");
 
-  // Fill with junk to catch dangling refs.
-  memset(v, 1, PGSIZE);
-
   if(kmem.use_lock)
     acquire(&kmem.lock);
-  r = (struct run*)v;
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  kmem.fpcnt++;
+
+  if (__get_refc(V2P(v)))
+    __decr_refc(V2P(v));
+  if (!__get_refc(V2P(v))) {
+    // Fill with junk to catch dangling refs.
+    memset(v, 1, PGSIZE);
+    r = (struct run*)v;
+
+    r->next = kmem.freelist;
+    kmem.freelist = r;
+    kmem.fpcnt++;
+  }
+
   if(kmem.use_lock)
     release(&kmem.lock);
 }
@@ -93,37 +137,22 @@ kalloc(void)
   if(kmem.use_lock)
     acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r) {
+    kmem.fpcnt--;
+    kmem.pgrefc[V2P((char*)r)/PGSIZE] = 1;
     kmem.freelist = r->next;
+  }
   if(kmem.use_lock)
     release(&kmem.lock);
   return (char*)r;
 }
 
-
-void
-incr_refc(uint pa)
-{
-  // if (!kmem.use_lock) acquire(&kmem.lock);
-  kmem.pgrefc[pa/PGSIZE]++;
-  // if (!kmem.use_lock) release(&kmem.lock);
-}
-
-void
-decr_refc(uint pa)
-{
-  // if (!kmem.use_lock) acquire(&kmem.lock);
-  kmem.pgrefc[pa/PGSIZE]--;
-  // if (!kmem.use_lock) release(&kmem.lock);
-}
-
 uint
 get_refc(uint pa)
 {
-  uint res;
-  // if (!kmem.use_lock) acquire(&kmem.lock);
-  res = kmem.pgrefc[pa/PGSIZE];
-  // if (!kmem.use_lock) release(&kmem.lock);
+  acquire(&kmem.lock);
+  uint res = __get_refc(pa);
+  release(&kmem.lock);
   return res;
 }
 
@@ -132,25 +161,9 @@ get_refc(uint pa)
 int
 sys_countfp(void)
 {
-  return 0;
+  acquire(&kmem.lock);
+  int res = kmem.fpcnt;
+  release(&kmem.lock);
+  return res;
 }
-
-int
-sys_countvp(void)
-{
-  return 0;
-}
-
-int
-sys_countpp(void)
-{
-  return 0;
-}
-
-int
-sys_countptp(void)
-{
-  return 0;
-}
-
 

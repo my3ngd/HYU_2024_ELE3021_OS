@@ -315,32 +315,35 @@ clearpteu(pde_t *pgdir, char *uva)
 pde_t*
 copyuvm(pde_t *pgdir, uint sz)
 {
-  pde_t *d;
+  pde_t *pde;
   pte_t *pte;
   uint pa, i, flags;
-  char *mem;
+  // char *mem;   // unused variable
 
-  if((d = setupkvm()) == 0)
+  if((pde = setupkvm()) == 0)
     return 0;
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
     if(!(*pte & PTE_P))
       panic("copyuvm: page not present");
+    *pte &= ~PTE_W;  // forbid write
     pa = PTE_ADDR(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
+    // 참조만 할 거라면 kalloc, memmove하면 안됨
+    // if((mem = kalloc()) == 0)
+    //   goto bad;
+    // memmove(mem, (char*)P2V(pa), PGSIZE);
+    // 자식 프로세스는 새로운 PT를 할당받고 동일한 부모 프로세스와 같은 페이지를 가리킨다.
+    if(mappages(pde, (void*)i, PGSIZE, pa, flags) < 0)  // 원래 V2P(mem)이었는데, 그건 새로 만들었던거고, pa는 부모꺼니까 pa를 가져온거임
       goto bad;
-    memmove(mem, (char*)P2V(pa), PGSIZE);
-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
-      kfree(mem);
-      goto bad;
-    }
+    incr_refc(pa);
   }
-  return d;
+  lcr3(V2P(pgdir));
+  return pde;
 
 bad:
-  freevm(d);
+  freevm(pde);
   return 0;
 }
 
@@ -389,32 +392,85 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
 void
 CoW_handler(void)
 {
-  uint va;
-  if ((va = rcr2()) < 0)
-    panic("CoW handler");
-
-  pte_t *pte;
-  if ((pte = walkpgdir(myproc()->pgdir, (void*)va, 0)) == 0)
-    panic("CoW handler: pte should exist");
-  if(!(*pte & PTE_P))
-    panic("CoW handler: page not present");
-  uint pa = PTE_ADDR(*pte);
-  uint rc = get_refc(pa);
-  // uint flags = PTE_FLAGS(*pte);
-  if (1 < rc) {
-    char *mem;
-    if ((mem = kalloc()) == 0)
-      goto bad;
-    memmove(mem, (char*)P2V(pa), PGSIZE);
-    *pte = V2P(mem) | PTE_P | PTE_W | PTE_U;
-    decr_refc(pa);
+  uint va;  // 삑난 곳의 주소
+  if ((va = rcr2()) < 0) {
+    myproc()->killed = 1;
+    cprintf("CoW handler: invalid va\n");
+    return ;
   }
-  if (rc == 1) {
+
+  pte_t *pte = walkpgdir(myproc()->pgdir, (void*)va, 0);  // 삑난 곳의 pte를 찾음
+  uint pa = PTE_ADDR(*pte);             // 삑난 pte의 정확한 주소 (= pde)
+  uint refc = get_refc(pa);             // 삑난 pte의 레퍼런스 수
+  // uint flag = PTE_FLAGS(*pte) | PTE_W;  // 삑난 pte의 권한 목록
+
+  if (!pte || !(*pte & PTE_P))
+    panic("CoW handler: page not present");
+
+  if (1 < refc) { // 참조 수가 2 이상(공유중)이면
+    // cprintf("case 1: pid = %d, flag = %d\n", myproc()->pid, flag);
+    char *mem;
+    if ((mem = kalloc()) == 0)              // 새로 kalloc 받은 다음
+      panic("CoW handler: out of memory");
+    memmove(mem, (char*)P2V(pa), PGSIZE);   // pa에 있던 값들을 PGSIZE만큼 복사한다.
+    // *pte &= ~PTE_P;
+    // mappages(myproc()->pgdir, (void*)PGROUNDDOWN(va), PGSIZE, *mem, flag);  // 근데 PGROUNDDONW 필요 없는 거 같은데...
+    // 그리고 현재 프로세스의 가상 주소와 물리 주소를 연결한다.
+
+    *pte = V2P(mem) | PTE_P | PTE_U | PTE_W;
+    decr_refc(pa);
+  } else if (refc == 1) {
     *pte |= PTE_W;
   }
   lcr3(V2P(myproc()->pgdir));
-bad:
-  return ;
+}
+
+
+int
+sys_countvp(void)
+{
+  struct proc *p = myproc();
+  int cnt = 0;
+  for (int i = 0; i < p->sz; i += PGSIZE) {
+    pte_t *pte = walkpgdir(p->pgdir, (void*)i, 0);
+    if (pte && (*pte & PTE_U))
+      cnt++;
+  }
+  return cnt;
+}
+
+int
+sys_countpp(void)
+{
+  struct proc *p = myproc();
+  pde_t *pgdir = p->pgdir, *pde;
+  int cnt = 0;
+
+  for (int i = 0; i < NPDENTRIES; i++) {
+    pde = &pgdir[i];
+    if (*pde & PTE_U) {
+      pte_t *pte = (pte_t*)P2V(PTE_ADDR(*pde));
+      for (int j = 0; j < NPTENTRIES; j++)
+        if (pte[j] & PTE_U)
+          cnt++;
+    }
+  }
+  return cnt;
+}
+
+int
+sys_countptp(void)
+{
+  struct proc *p = myproc();
+  pde_t *pgdir = p->pgdir, *pde;
+  int cnt = 1;  // cur
+
+  for (int i = 0; i < NPDENTRIES; i++) {
+    pde = &pgdir[i];
+    if (*pde & PTE_P)
+      cnt++;
+  }
+  return cnt;
 }
 
 
@@ -425,3 +481,8 @@ bad:
 //PAGEBREAK!
 // Blank page.
 
+/* 목록
+ * 1. panic: remap - 이건 물리 주소가 존재하는데 또 매핑한다고 뜸
+ * 2. 무한루프 돌았음 - 이거 memset을 refc가 0일 때 말고도 해서 그런거였음
+ * 3. lock 잡기가 애매함 (무한부팅 문제)
+ */
