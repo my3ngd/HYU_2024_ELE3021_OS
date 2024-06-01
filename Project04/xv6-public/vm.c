@@ -385,6 +385,39 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
   return 0;
 }
 
+
+void
+CoW_handler(void)
+{
+  uint va;
+  if ((va = rcr2()) < 0)
+    panic("CoW handler");
+
+  pte_t *pte;
+  if ((pte = walkpgdir(myproc()->pgdir, (void*)va, 0)) == 0)
+    panic("CoW handler: pte should exist");
+  if(!(*pte & PTE_P))
+    panic("CoW handler: page not present");
+  uint pa = PTE_ADDR(*pte);
+  uint rc = get_refc(pa);
+  // uint flags = PTE_FLAGS(*pte);
+  if (1 < rc) {
+    char *mem;
+    if ((mem = kalloc()) == 0)
+      goto bad;
+    memmove(mem, (char*)P2V(pa), PGSIZE);
+    *pte = V2P(mem) | PTE_P | PTE_W | PTE_U;
+    decr_refc(pa);
+  }
+  if (rc == 1) {
+    *pte |= PTE_W;
+  }
+  lcr3(V2P(myproc()->pgdir));
+bad:
+  return ;
+}
+
+
 //PAGEBREAK!
 // Blank page.
 //PAGEBREAK!

@@ -21,6 +21,8 @@ struct {
   struct spinlock lock;
   int use_lock;
   struct run *freelist;
+  int fpcnt;
+  uint pgrefc[PHYSTOP/PGSIZE];
 } kmem;
 
 // Initialization happens in two phases.
@@ -33,6 +35,7 @@ kinit1(void *vstart, void *vend)
 {
   initlock(&kmem.lock, "kmem");
   kmem.use_lock = 0;
+  kmem.fpcnt = 0;
   freerange(vstart, vend);
 }
 
@@ -48,8 +51,10 @@ freerange(void *vstart, void *vend)
 {
   char *p;
   p = (char*)PGROUNDUP((uint)vstart);
-  for(; p + PGSIZE <= (char*)vend; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)vend; p += PGSIZE) {
+    kmem.pgrefc[V2P(p)/PGSIZE] = 0;
     kfree(p);
+  }
 }
 //PAGEBREAK: 21
 // Free the page of physical memory pointed at by v,
@@ -72,6 +77,7 @@ kfree(char *v)
   r = (struct run*)v;
   r->next = kmem.freelist;
   kmem.freelist = r;
+  kmem.fpcnt++;
   if(kmem.use_lock)
     release(&kmem.lock);
 }
@@ -93,4 +99,58 @@ kalloc(void)
     release(&kmem.lock);
   return (char*)r;
 }
+
+
+void
+incr_refc(uint pa)
+{
+  // if (!kmem.use_lock) acquire(&kmem.lock);
+  kmem.pgrefc[pa/PGSIZE]++;
+  // if (!kmem.use_lock) release(&kmem.lock);
+}
+
+void
+decr_refc(uint pa)
+{
+  // if (!kmem.use_lock) acquire(&kmem.lock);
+  kmem.pgrefc[pa/PGSIZE]--;
+  // if (!kmem.use_lock) release(&kmem.lock);
+}
+
+uint
+get_refc(uint pa)
+{
+  uint res;
+  // if (!kmem.use_lock) acquire(&kmem.lock);
+  res = kmem.pgrefc[pa/PGSIZE];
+  // if (!kmem.use_lock) release(&kmem.lock);
+  return res;
+}
+
+// system calls
+
+int
+sys_countfp(void)
+{
+  return 0;
+}
+
+int
+sys_countvp(void)
+{
+  return 0;
+}
+
+int
+sys_countpp(void)
+{
+  return 0;
+}
+
+int
+sys_countptp(void)
+{
+  return 0;
+}
+
 
