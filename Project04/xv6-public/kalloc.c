@@ -22,7 +22,7 @@ struct {
   int use_lock;
   struct run *freelist;
   int fpcnt;
-  uint pgrefc[PHYSTOP/PGSIZE];
+  int pgrefc[PHYSTOP/PGSIZE];
 } kmem;
 
 
@@ -38,10 +38,10 @@ __decr_refc(uint pa)
   kmem.pgrefc[pa/PGSIZE]--;
 }
 
-uint
+int
 __get_refc(uint pa)
 {
-  uint res;
+  int res;
   res = kmem.pgrefc[pa/PGSIZE];
   if (res < 0)
     panic("negative refc");
@@ -63,6 +63,17 @@ decr_refc(uint pa)
   __decr_refc(pa);
   release(&kmem.lock);
 }
+
+int
+get_refc(uint pa)
+{
+  acquire(&kmem.lock);
+  int res = __get_refc(pa);
+  release(&kmem.lock);
+  return res;
+}
+
+
 // Initialization happens in two phases.
 // 1. main() calls kinit1() while still using entrypgdir to place just
 // the pages mapped by entrypgdir on free list.
@@ -145,15 +156,6 @@ kalloc(void)
   if(kmem.use_lock)
     release(&kmem.lock);
   return (char*)r;
-}
-
-uint
-get_refc(uint pa)
-{
-  acquire(&kmem.lock);
-  uint res = __get_refc(pa);
-  release(&kmem.lock);
-  return res;
 }
 
 // system calls

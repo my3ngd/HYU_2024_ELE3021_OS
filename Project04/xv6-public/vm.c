@@ -401,14 +401,13 @@ CoW_handler(void)
 
   pte_t *pte = walkpgdir(myproc()->pgdir, (void*)va, 0);  // 삑난 곳의 pte를 찾음
   uint pa = PTE_ADDR(*pte);             // 삑난 pte의 정확한 주소 (= pde)
-  uint refc = get_refc(pa);             // 삑난 pte의 레퍼런스 수
+  int refc = get_refc(pa);              // 삑난 pte의 레퍼런스 수
   // uint flag = PTE_FLAGS(*pte) | PTE_W;  // 삑난 pte의 권한 목록
 
   if (!pte || !(*pte & PTE_P))
     panic("CoW handler: page not present");
 
   if (1 < refc) { // 참조 수가 2 이상(공유중)이면
-    // cprintf("case 1: pid = %d, flag = %d\n", myproc()->pid, flag);
     char *mem;
     if ((mem = kalloc()) == 0)              // 새로 kalloc 받은 다음
       panic("CoW handler: out of memory");
