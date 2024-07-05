@@ -462,7 +462,7 @@ sys_countptp(void)
 {
   struct proc *p = myproc();
   pde_t *pgdir = p->pgdir, *pde;
-  int cnt = 1;  // cur
+  int cnt = 1;  // pgdir
 
   for (int i = 0; i < NPDENTRIES; i++) {
     pde = &pgdir[i];
