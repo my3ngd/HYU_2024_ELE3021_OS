@@ -52,7 +52,7 @@
 
 명세에 의하면 큐의 관계를 아래 그림과 같이 요약할 수 있다.
 
-![Untitled](Untitled.png)
+![queue](/HYU_2024_ELE3021_OS/Project02/resources/img1.png)
 
 위 그림에서, 각 큐의 왼쪽이 back이고, 오른쪽이 front이다.
 
@@ -513,7 +513,7 @@ monopolized 상태이면 MoQ 스케줄링 실행 후 1번으로 되돌아감
 
 queue.c와 monopoly.c에는 많은 함수들이 정의되어 있으나, 대부분 어렵지 않게 구현할 수 있다. 이번 프로젝트에서 구현한 원형 큐를 그림으로 나타내면 아래와 같다.
 
-![Untitled](Untitled%201.png)
+![circular_queue](/HYU_2024_ELE3021_OS/Project02/resources/img2.png)
 
 빨간 색 화살표가 가리키는 곳이 `front`, 파란 색 화살표가 가리키는 곳이 `back`이다. C++의 iterator인 `std::begin()`, `std::end()`과 유사하다고 이해할 수 있다.
 
@@ -934,7 +934,7 @@ global tick이 100 이상이고 MoQ 스케줄링을 하지 않는 경우 `priori
 
 각 테스트 이후 아래와 같은 결과가 나타난다.
 
-![Untitled](Untitled%202.png)
+![testresult](/HYU_2024_ELE3021_OS/Project02/resources/img3.png)
 
 - L0, L1, L2의 time quantum의 비율은 1:2:3이다. Test 1에서 L0, L1, L2에 머무른 시간 비율을 보면 많은 경우 1:2(L0:L1)와 1:3(L0:L2)의 비율을 이룬다고 볼 수 있다. 그렇지 않은 경우에는 낮은 level의 큐에서 작업이 종료되었거나, Priority Boost로 인해 비율이 올바르게 나타나지 않은 경우로 추측할 수 있다.
     - 테스트 프로그램의 NUM_LOOP 값(100000)을 키우면, time quantum의 비율이 1:2와 1:3에 가까워짐을 관찰할 수 있다.
@@ -955,7 +955,7 @@ User program에서 문제가 발생하는 경우 강제 종료시키고 메시�
     
     xv6에서는 아래와 같은 출력을 얻을 수 있었다.
     
-    ![Untitled](Untitled%203.png)
+    ![output](/HYU_2024_ELE3021_OS/Project02/resources/img4.png)
     
     User program에서 문제가 발생하면, trap이 발생하였음을 알리고, user program이 종료되며, 다시 스케줄링이 정상적으로 재개된다.
     
