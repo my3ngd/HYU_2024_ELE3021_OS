@@ -468,7 +468,7 @@ bad:
     여기에서 반환할 페이지의 개수 `cnt`가 기본적으로 1로 설정되었다. 이는 프로세스의 페이지 디렉토리에 사용된 페이지이다. (xv6에는 프로세스마다 한 개의 `pgdir`가 있으며, `pgdir`의 각 entry인 `pde`에는 여러 `pte`의 정보가 담겨 있다.) 페이지 디렉토리를 돌면서 `PTE_P` (present 여부)만 검사하여 개수를 더한다.
     
 
-![page_struct](/HYU_2024_ELE3021_OS/Project04/resources/img1.png)
+![page_struct](/Project04/resources/img1.png)
 
 페이지 구조를 요약하면 위 그림과 같으며, system call들의 역할은 아래처럼 설명할 수 있다.
 
@@ -480,7 +480,7 @@ bad:
 
 주어진 테스트케이스를 아래와 같이 통과함을 볼 수 있었다.
 
-![test](/HYU_2024_ELE3021_OS/Project04/resources/img2.png)
+![test](/Project04/resources/img2.png)
 
 `countvp()`, `countpp()`, `countptp()` 모두 예제 테스트 코드 출력 결과와 동일한 값을 얻었다.
 
@@ -512,6 +512,6 @@ bad:
         
 - `ls`를 입력하여 Copy-on-Write된 프로그램이 `T_PGFLT`를 거쳐 `CoW_handler()`가 정상적으로 실행되는지 확인하였을 때, 아래 사진과 같이 프로그램이 정상적으로 실행되지만 종료되지 않는 것처럼 보이는 현상이 발생했다.
     
-    ![pgflt](/HYU_2024_ELE3021_OS/Project04/resources/img3.png)
+    ![pgflt](/Project04/resources/img3.png)
     
     확인해본 결과 `kfree()`함수에서 페이지를 free page로 만드는 과정에서 `memset`을 하는데, 참조 카운터가 0인 경우에만 `memset`을 실행해야 함에도, 항상 실행되고 있었다. 수정 후에는 정상적으로 동작함을 확인할 수 있었다.
